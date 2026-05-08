@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MRプロトタイプ</title>
+  <title>左官MR練習プロトタイプ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <style>
@@ -14,169 +14,368 @@
       font-size: 13px; line-height: 1.6; z-index: 100;
       max-width: 320px;
     }
+    #enterAR {
+      position: fixed; bottom: 24px; right: 24px;
+      padding: 18px 36px; font-size: 18px;
+      background: #8B4513; color: white;
+      border: none; border-radius: 10px;
+      cursor: pointer; z-index: 100;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #enterAR:hover:not(:disabled) { background: #A0522D; }
+    #enterAR:disabled { background: #666; cursor: not-allowed; }
+    #status {
+      position: fixed; bottom: 24px; left: 24px;
+      background: rgba(0,0,0,0.7); color: #fff;
+      padding: 8px 12px; border-radius: 6px;
+      font-size: 12px; z-index: 100;
+    }
   </style>
 </head>
 <body>
   <div id="info">
-    <strong>左官MRプロトタイプ (MR版)</strong><br>
-    1) Quest 3 のブラウザで開く<br>
-    2) 右下「Enter AR」を押す → 現実の部屋に壁が出現<br>
-    3) 右コントローラーを壁に向けて<strong>トリガーを引きながら</strong>塗る<br>
-    4) 左コントローラーで左のパレットを指して色変更
+    <strong>左官MR練習プロトタイプ</strong><br>
+    1) 泥船にコテ(右手レーザー)を向けてトリガー → 泥を乗せる<br>
+    2) 壁に向けてトリガー → 泥を塗る (泥が減る)<br>
+    3) 全面を均一に塗ったら「採点」ボタンで評価<br>
+    ※ 同じ場所を塗りすぎると赤いリングで警告
   </div>
 
-  <!--
-    MR化のポイント:
-    - background="transparent: true"  シーンの背景を透明に
-    - renderer="alpha: true"          描画バッファをアルファ対応に
-    - webxr requiredFeatures に local-floor、optionalFeatures に AR系
-    Quest 3 では自動で「Enter AR」ボタンが出てパススルー表示になります
-  -->
+  <button id="enterAR" disabled>確認中...</button>
+  <div id="status">WebXR 対応を確認中...</div>
+
   <a-scene
     background="transparent: true"
-    webxr="optionalFeatures: hit-test, local-floor, anchors;
-           requiredFeatures: local-floor;"
+    vr-mode-ui="enabled: false"
+    webxr="optionalFeatures: hit-test, local-floor, anchors, plane-detection;"
     renderer="colorManagement: true; antialias: true; alpha: true;">
 
     <a-assets>
       <canvas id="wallCanvas" width="1024" height="768"></canvas>
     </a-assets>
 
-    <!-- 壁本体: Canvas をテクスチャに使用 -->
+    <!-- 壁(塗る対象) -->
     <a-plane
       id="wall"
       position="0 1.5 -1.2"
       width="2" height="1.5"
-      material="src: #wallCanvas; shader: standard; roughness: 0.9; metalness: 0;"
-      paintable></a-plane>
+      material="src: #wallCanvas; shader: standard; roughness: 0.9; metalness: 0;"></a-plane>
 
-    <!-- 床は MR では現実の床が見えるので削除 -->
+    <!-- 泥船(リロード台) -->
+    <a-entity position="0.85 1.0 -0.6" rotation="-15 -30 0">
+      <a-box id="mudBoard" width="0.4" height="0.06" depth="0.3" color="#3a2010"></a-box>
+      <!-- 泥の表現 -->
+      <a-box position="0 0.04 0" width="0.34" height="0.03" depth="0.24" color="#5C4033"></a-box>
+      <a-text value="泥船" position="0 0.15 0" align="center" color="#fff" width="1.8"></a-text>
+      <a-text value="(コテを向けて装填)" position="0 0.10 0" align="center" color="#ccc" width="1.2"></a-text>
+    </a-entity>
 
-    <!-- 右手 = コテ。トリガー押下中だけ painting=true になる -->
+    <!-- HUD (左斜め前) -->
+    <a-entity position="-1.1 1.85 -0.6" rotation="0 35 0">
+      <a-plane width="0.85" height="0.4" color="#000" opacity="0.65"></a-plane>
+      <a-text value="施工状況" position="0 0.15 0.01" align="center" color="#fff" width="1.8"></a-text>
+      <a-text id="hudCoverage"  value="塗布率: 0%" position="0 0.04 0.01" align="center" color="#9F9" width="1.8"></a-text>
+      <a-text id="hudMaterial"  value="コテの泥: 0%" position="0 -0.04 0.01" align="center" color="#FFB" width="1.8"></a-text>
+      <a-text id="hudMessage"   value="" position="0 -0.14 0.01" align="center" color="#FFD700" width="1.5" wrap-count="22"></a-text>
+    </a-entity>
+
+    <!-- 操作ボタン -->
+    <a-entity position="-1.1 1.3 -0.6" rotation="0 35 0">
+      <a-box id="resetBtn" position="-0.2 0 0" width="0.32" height="0.14" depth="0.04" color="#a44"></a-box>
+      <a-text value="リセット" position="-0.2 0 0.03" align="center" color="#fff" width="1.6"></a-text>
+      <a-box id="gradeBtn" position="0.2 0 0" width="0.32" height="0.14" depth="0.04" color="#4a4"></a-box>
+      <a-text value="採点" position="0.2 0 0.03" align="center" color="#fff" width="1.6"></a-text>
+    </a-entity>
+
+    <!-- 右手 = コテ。先端に泥残量インジケーター -->
     <a-entity
       id="rightHand"
       laser-controls="hand: right"
-      raycaster="objects: #wall; far: 2; lineColor: #8B4513; lineOpacity: 0.7"
-      trowel></a-entity>
+      raycaster="objects: #wall, #mudBoard, #resetBtn, #gradeBtn; far: 2.5; lineColor: #8B4513; lineOpacity: 0.7"
+      trowel>
+      <!-- コテ先のように見せる小さな板 -->
+      <a-box position="0 -0.02 -0.08" rotation="20 0 0" width="0.08" height="0.005" depth="0.05" color="#666"></a-box>
+      <!-- 泥の量を縦バーで表示 -->
+      <a-box id="materialIndicator" position="0.06 0 -0.05" width="0.015" height="0.06" depth="0.015" color="#5a5" scale="1 0.01 1"></a-box>
+    </a-entity>
 
-    <!-- 左手 = パレット選択 -->
+    <!-- 左手 = ボタン操作専用 -->
     <a-entity
       id="leftHand"
       laser-controls="hand: left"
-      raycaster="objects: .palette; far: 2; lineColor: #ffffff; lineOpacity: 0.5"></a-entity>
+      raycaster="objects: #resetBtn, #gradeBtn; far: 2.5; lineColor: #ffffff; lineOpacity: 0.5"></a-entity>
 
-    <!-- カラーパレット -->
-    <a-entity position="-1.1 1.5 -0.6" rotation="0 30 0">
-      <a-text value="Palette" position="0 0.45 0" align="center" color="#ffffff" width="1.2"></a-text>
-      <a-box class="palette" position="0  0.30 0" width="0.16" height="0.16" depth="0.02"
-             color="#8B4513" data-color="#8B4513"></a-box>
-      <a-box class="palette" position="0  0.10 0" width="0.16" height="0.16" depth="0.02"
-             color="#A0826D" data-color="#A0826D"></a-box>
-      <a-box class="palette" position="0 -0.10 0" width="0.16" height="0.16" depth="0.02"
-             color="#C8B89D" data-color="#C8B89D"></a-box>
-      <a-box class="palette" position="0 -0.30 0" width="0.16" height="0.16" depth="0.02"
-             color="#5C4033" data-color="#5C4033"></a-box>
-    </a-entity>
-
-    <!-- 照明 -->
-    <a-light type="ambient" intensity="0.8"></a-light>
+    <a-light type="ambient" intensity="0.85"></a-light>
     <a-light type="directional" intensity="0.6" position="1 2 1"></a-light>
-
   </a-scene>
 
   <script>
-    /* ---------- 1. 壁 Canvas の初期化 ---------- */
-    (function initWallTexture () {
-      const canvas = document.getElementById('wallCanvas');
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#EDE5D8';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      for (let i = 0; i < 1500; i++) {
-        ctx.fillStyle = `rgba(170,160,145,${Math.random() * 0.15})`;
-        ctx.beginPath();
-        ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height,
-                Math.random() * 2.5, 0, Math.PI * 2);
-        ctx.fill();
+    /* ==================== 設定 ==================== */
+    const SETTINGS = {
+      MAX_MATERIAL: 100,           // コテの最大積載量
+      PAINT_COST: 1.5,             // 1フレームに減る泥
+      RELOAD_PER_FRAME: 4,         // 1フレームで装填する量
+      TARGET_THICKNESS_MIN: 2,     // 目標厚みの下限
+      TARGET_THICKNESS_MAX: 5,     // 目標厚みの上限(これを超えると塗りすぎ)
+      STROKE_RADIUS: 45            // 1ストロークの半径(ピクセル)
+    };
+
+    /* ==================== WebXR 起動 ==================== */
+    const statusEl   = document.getElementById('status');
+    const enterARBtn = document.getElementById('enterAR');
+    const sceneEl    = document.querySelector('a-scene');
+    let arSupported  = false;
+
+    async function checkAR() {
+      if (!navigator.xr) {
+        statusEl.textContent = '✗ WebXR 非対応 (Meta Quest ブラウザを使用)';
+        enterARBtn.textContent = 'WebXR 非対応';
+        return;
       }
-    })();
+      try {
+        arSupported = await navigator.xr.isSessionSupported('immersive-ar');
+        const vrSupported = await navigator.xr.isSessionSupported('immersive-vr');
+        if (arSupported) {
+          statusEl.textContent = '✓ AR (パススルー) 対応';
+          enterARBtn.textContent = 'Enter AR (MR)';
+          enterARBtn.disabled = false;
+        } else if (vrSupported) {
+          statusEl.textContent = '⚠ AR 非対応。VR モードで起動';
+          enterARBtn.textContent = 'Enter VR';
+          enterARBtn.disabled = false;
+        } else {
+          statusEl.textContent = '✗ XR 非対応';
+        }
+      } catch (e) {
+        statusEl.textContent = 'エラー: ' + e.message;
+      }
+    }
+    checkAR();
 
-    /* ---------- 2. 現在の塗料色 ---------- */
-    let currentColor = '#8B4513';
-
-    document.querySelectorAll('.palette').forEach(el => {
-      el.addEventListener('click', () => {
-        currentColor = el.dataset.color;
-        el.setAttribute('scale', '1.25 1.25 1.25');
-        setTimeout(() => el.setAttribute('scale', '1 1 1'), 150);
-      });
+    enterARBtn.addEventListener('click', () => {
+      if (arSupported) sceneEl.enterAR();
+      else sceneEl.enterVR();
+    });
+    sceneEl.addEventListener('enter-vr', () => {
+      enterARBtn.style.display = 'none';
+      statusEl.style.display = 'none';
+      document.getElementById('info').style.display = 'none';
+    });
+    sceneEl.addEventListener('exit-vr', () => {
+      enterARBtn.style.display = 'block';
+      statusEl.style.display = 'block';
+      document.getElementById('info').style.display = 'block';
     });
 
-    /* ---------- 3. trowel コンポーネント ----------
-       右コントローラーに付与。トリガー押下中だけ painting=true */
+    /* ==================== 壁・厚みマップ ==================== */
+    const wallCanvas = document.getElementById('wallCanvas');
+    const wallCtx = wallCanvas.getContext('2d');
+    let thicknessMap = new Uint8Array(wallCanvas.width * wallCanvas.height);
+
+    function drawBaseTexture() {
+      wallCtx.fillStyle = '#EDE5D8';
+      wallCtx.fillRect(0, 0, wallCanvas.width, wallCanvas.height);
+      for (let i = 0; i < 1500; i++) {
+        wallCtx.fillStyle = `rgba(170,160,145,${Math.random() * 0.15})`;
+        wallCtx.beginPath();
+        wallCtx.arc(Math.random() * wallCanvas.width,
+                    Math.random() * wallCanvas.height,
+                    Math.random() * 2.5, 0, Math.PI * 2);
+        wallCtx.fill();
+      }
+    }
+    drawBaseTexture();
+
+    function markTextureDirty() {
+      const wall = document.getElementById('wall');
+      const mesh = wall.getObject3D('mesh');
+      if (mesh && mesh.material && mesh.material.map) {
+        mesh.material.map.needsUpdate = true;
+      }
+    }
+
+    /* ==================== 塗布処理 ==================== */
+    function paintAt(uv) {
+      const cx = uv.x * wallCanvas.width;
+      const cy = (1 - uv.y) * wallCanvas.height;
+      const r  = SETTINGS.STROKE_RADIUS;
+
+      // 1) 厚みマップを更新(確率的に増加)
+      const x0 = Math.max(0, Math.floor(cx - r));
+      const x1 = Math.min(wallCanvas.width,  Math.ceil(cx + r));
+      const y0 = Math.max(0, Math.floor(cy - r));
+      const y1 = Math.min(wallCanvas.height, Math.ceil(cy + r));
+      let avgThicknessHere = 0, sampleCount = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const dx = x - cx, dy = y - cy;
+          const d2 = dx*dx + dy*dy;
+          if (d2 > r*r) continue;
+          const idx = y * wallCanvas.width + x;
+          const falloff = 1 - Math.sqrt(d2) / r;
+          if (Math.random() < falloff * 0.35) {
+            if (thicknessMap[idx] < 255) thicknessMap[idx]++;
+          }
+          avgThicknessHere += thicknessMap[idx];
+          sampleCount++;
+        }
+      }
+      if (sampleCount > 0) avgThicknessHere /= sampleCount;
+
+      // 2) 視覚的な塗布(半透明グラデーションで塗り重ね感)
+      const grad = wallCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0,   '#8B4513DD');
+      grad.addColorStop(0.6, '#8B4513AA');
+      grad.addColorStop(1,   '#8B451300');
+      wallCtx.fillStyle = grad;
+      wallCtx.beginPath();
+      wallCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      wallCtx.fill();
+
+      // 3) 塗りすぎ警告(目標範囲を超えた場合に赤リング)
+      if (avgThicknessHere > SETTINGS.TARGET_THICKNESS_MAX) {
+        wallCtx.strokeStyle = 'rgba(255, 50, 50, 0.5)';
+        wallCtx.lineWidth = 3;
+        wallCtx.beginPath();
+        wallCtx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
+        wallCtx.stroke();
+      }
+
+      markTextureDirty();
+    }
+
+    /* ==================== 採点 ==================== */
+    function calculateScore() {
+      let painted = 0, target = 0, overdone = 0;
+      const total = thicknessMap.length;
+      for (let i = 0; i < total; i++) {
+        const t = thicknessMap[i];
+        if (t > 0) painted++;
+        if (t >= SETTINGS.TARGET_THICKNESS_MIN && t <= SETTINGS.TARGET_THICKNESS_MAX) target++;
+        if (t > SETTINGS.TARGET_THICKNESS_MAX) overdone++;
+      }
+      const coverage   = (painted / total) * 100;
+      const uniformity = painted > 0 ? (target / painted) * 100 : 0;
+      const overall    = (coverage / 100) * (uniformity / 100) * 100;
+      return { coverage, uniformity, overdone, overall };
+    }
+
+    function updateCoverageDisplay() {
+      let painted = 0;
+      for (let i = 0; i < thicknessMap.length; i++) {
+        if (thicknessMap[i] > 0) painted++;
+      }
+      const pct = (painted / thicknessMap.length) * 100;
+      document.getElementById('hudCoverage')
+              .setAttribute('value', `塗布率: ${pct.toFixed(0)}%`);
+    }
+
+    function updateMaterialDisplay(mat) {
+      document.getElementById('hudMaterial')
+              .setAttribute('value', `コテの泥: ${Math.floor(mat)}%`);
+    }
+
+    let messageTimer = null;
+    function setMessage(msg) {
+      document.getElementById('hudMessage').setAttribute('value', msg);
+      clearTimeout(messageTimer);
+      messageTimer = setTimeout(() => {
+        document.getElementById('hudMessage').setAttribute('value', '');
+      }, 4000);
+    }
+
+    function resetWall() {
+      thicknessMap = new Uint8Array(wallCanvas.width * wallCanvas.height);
+      drawBaseTexture();
+      markTextureDirty();
+      updateCoverageDisplay();
+      setMessage('壁をリセットしました');
+    }
+
+    /* ==================== ボタン ==================== */
+    // A-Frame の laser-controls はトリガー押下で click イベントを発火
+    document.getElementById('resetBtn').addEventListener('click', resetWall);
+    document.getElementById('gradeBtn').addEventListener('click', () => {
+      const s = calculateScore();
+      setMessage(
+        `塗布率 ${s.coverage.toFixed(0)}% / 均一 ${s.uniformity.toFixed(0)}% / 総合 ${s.overall.toFixed(0)}点`
+      );
+    });
+
+    /* ==================== コテのコンポーネント ==================== */
     AFRAME.registerComponent('trowel', {
       init: function () {
         this.painting = false;
-        // Quest コントローラーのトリガー
+        this.material = 0;
+        this.lastTick = 0;
+        this.coverageCounter = 0;
+
         this.el.addEventListener('triggerdown', () => { this.painting = true; });
         this.el.addEventListener('triggerup',   () => { this.painting = false; });
-        // PC のマウスでも試せるようにフォールバック
+        // PC でのテスト用フォールバック
         window.addEventListener('mousedown', () => { this.painting = true; });
         window.addEventListener('mouseup',   () => { this.painting = false; });
-      }
-    });
-
-    /* ---------- 4. paintable コンポーネント ----------
-       trowel.painting が true のときだけ塗る */
-    AFRAME.registerComponent('paintable', {
-      init: function () {
-        this.canvas = document.getElementById('wallCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.intersectedEl = null;
-        this.lastPaint = 0;
-
-        this.el.addEventListener('raycaster-intersected', (evt) => {
-          this.intersectedEl = evt.detail.el;
-        });
-        this.el.addEventListener('raycaster-intersected-cleared', () => {
-          this.intersectedEl = null;
-        });
       },
       tick: function () {
-        if (!this.intersectedEl) return;
-
-        // ★ トリガー押下チェック
-        const trowel = this.intersectedEl.components.trowel;
-        if (!trowel || !trowel.painting) return;
-
-        const raycaster = this.intersectedEl.components.raycaster;
-        if (!raycaster) return;
-        const intersection = raycaster.getIntersection(this.el);
-        if (!intersection || !intersection.uv) return;
+        if (!this.painting) return;
 
         const now = performance.now();
-        if (now - this.lastPaint < 16) return;
-        this.lastPaint = now;
+        if (now - this.lastTick < 16) return;
+        this.lastTick = now;
 
-        const uv = intersection.uv;
-        const x = uv.x * this.canvas.width;
-        const y = (1 - uv.y) * this.canvas.height;
+        const raycaster = this.el.components.raycaster;
+        if (!raycaster) return;
+        const inters = raycaster.intersections;
+        if (!inters || inters.length === 0) return;
 
-        const radius = 55;
-        const grad = this.ctx.createRadialGradient(x, y, 0, x, y, radius);
-        grad.addColorStop(0,   currentColor + 'EE');
-        grad.addColorStop(0.6, currentColor + 'AA');
-        grad.addColorStop(1,   currentColor + '00');
-        this.ctx.fillStyle = grad;
-        this.ctx.beginPath();
-        this.ctx.arc(x, y, radius, 0, Math.PI * 2);
-        this.ctx.fill();
-
-        const mesh = this.el.getObject3D('mesh');
-        if (mesh && mesh.material && mesh.material.map) {
-          mesh.material.map.needsUpdate = true;
+        // 最初に当たった「ID 付き」要素を探す
+        let hit = null, hitEl = null;
+        for (const it of inters) {
+          const el = it.object && it.object.el;
+          if (el && el.id) { hit = it; hitEl = el; break; }
         }
+        if (!hit) return;
+
+        if (hitEl.id === 'wall') {
+          if (this.material <= 0) {
+            setMessage('泥がありません。泥船で装填してください');
+            return;
+          }
+          paintAt(hit.uv);
+          this.material = Math.max(0, this.material - SETTINGS.PAINT_COST);
+          updateMaterialIndicator(this);
+          updateMaterialDisplay(this.material);
+          // 塗布率は重い処理なので 10 フレームに 1 回更新
+          this.coverageCounter++;
+          if (this.coverageCounter >= 10) {
+            this.coverageCounter = 0;
+            updateCoverageDisplay();
+          }
+        } else if (hitEl.id === 'mudBoard') {
+          this.material = Math.min(SETTINGS.MAX_MATERIAL,
+                                   this.material + SETTINGS.RELOAD_PER_FRAME);
+          updateMaterialIndicator(this);
+          updateMaterialDisplay(this.material);
+        }
+        // resetBtn / gradeBtn は click イベントで処理(ここでは無視)
       }
     });
+
+    function updateMaterialIndicator(trowel) {
+      const ind = trowel.el.querySelector('#materialIndicator');
+      if (!ind) return;
+      const pct = trowel.material / SETTINGS.MAX_MATERIAL;
+      ind.setAttribute('scale', `1 ${Math.max(0.01, pct)} 1`);
+      // 色: 満タンで緑、減ると赤に
+      const r = Math.floor(220 * (1 - pct));
+      const g = Math.floor(180 * pct);
+      ind.setAttribute('color', `rgb(${r}, ${g}, 60)`);
+    }
+
+    // 初期表示
+    updateCoverageDisplay();
+    updateMaterialDisplay(0);
   </script>
 </body>
 </html>
