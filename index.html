@@ -30,16 +30,24 @@
       padding: 8px 12px; border-radius: 6px;
       font-size: 12px; z-index: 100;
     }
+    #version {
+      position: fixed; top: 12px; right: 12px;
+      background: rgba(0,0,0,0.5); color: #aaa;
+      padding: 4px 10px; border-radius: 6px;
+      font-size: 11px; z-index: 100;
+      letter-spacing: 0.05em;
+    }
   </style>
 </head>
 <body>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
-    右手の鏝の刃を壁に近づけるだけで塗れる<br>
+    右手の鏝の<strong>刃を壁に近づけるだけ</strong>で全刃幅で塗れる<br>
     同じ場所を塗りすぎると赤いリングで警告<br>
     左手で「採点」「リセット」を操作
   </div>
 
+  <div id="version">v0.9</div>
   <button id="enterAR" disabled>確認中...</button>
   <div id="status">WebXR 対応を確認中...</div>
 
@@ -76,11 +84,14 @@
       <a-text value="採点" position="0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
     </a-entity>
 
-    <!-- 右手 = 鏝 -->
+    <!--
+      右手 = 鏝
+      ★ raycaster を外す → trowel コンポーネントが
+        THREE.Raycaster で刃の縦9点から直接レイを飛ばす
+    -->
     <a-entity
       id="rightHand"
       oculus-touch-controls="hand: right; model: false"
-      raycaster="objects: #wall; far: 0.06; enabled: true; lineOpacity: 0;"
       trowel>
 
       <a-sphere position="0 -0.075 0" radius="0.023"
@@ -90,6 +101,7 @@
       <a-cylinder position="0 0 -0.02" radius="0.007" height="0.04"
                   rotation="90 0 0"
                   color="#999999" material="metalness: 0.75; roughness: 0.3;"></a-cylinder>
+      <!-- 刃: Y軸方向 -0.13〜+0.13 (26cm), z=-0.042 -->
       <a-box position="0 0 -0.042" width="0.105" height="0.26" depth="0.002"
              color="#D0D0D0" material="metalness: 0.92; roughness: 0.12;"></a-box>
     </a-entity>
@@ -115,8 +127,7 @@
 
     async function checkAR() {
       if (!navigator.xr) {
-        statusEl.textContent = '✗ WebXR 非対応';
-        enterARBtn.textContent = 'WebXR 非対応'; return;
+        statusEl.textContent = '✗ WebXR 非対応'; return;
       }
       try {
         arSupported = await navigator.xr.isSessionSupported('immersive-ar');
@@ -140,45 +151,36 @@
       if (arSupported) sceneEl.enterAR(); else sceneEl.enterVR();
     });
     sceneEl.addEventListener('enter-vr', () => {
-      ['enterAR','status','info'].forEach(id => {
-        document.getElementById(id).style.display = 'none';
-      });
+      ['enterAR','status','info','version'].forEach(id =>
+        document.getElementById(id).style.display = 'none');
     });
     sceneEl.addEventListener('exit-vr', () => {
-      ['enterAR','status','info'].forEach(id => {
-        document.getElementById(id).style.display = 'block';
-      });
+      ['enterAR','status','info','version'].forEach(id =>
+        document.getElementById(id).style.display = 'block');
     });
 
-    /* ==================== 壁テクスチャ (コンクリート下地) ==================== */
+    /* ==================== 壁テクスチャ ==================== */
     const wallCanvas = document.getElementById('wallCanvas');
     const ctx        = wallCanvas.getContext('2d');
     const W = wallCanvas.width, H = wallCanvas.height;
     let thicknessMap = new Uint8Array(W * H);
+    const MORTAR_R = 105, MORTAR_G = 102, MORTAR_B = 95;
 
     function drawBaseTexture() {
-      // ベース: 荒いコンクリート色
       ctx.fillStyle = '#C8C2B8';
       ctx.fillRect(0, 0, W, H);
-
-      // 粒感のある下地テクスチャ
       for (let i = 0; i < 6000; i++) {
-        const x = Math.random() * W;
-        const y = Math.random() * H;
-        const r = Math.random() * 1.8 + 0.3;
+        const x = Math.random() * W, y = Math.random() * H;
         const v = Math.floor(180 + Math.random() * 40);
         ctx.fillStyle = `rgba(${v},${v-2},${v-5},${0.15 + Math.random() * 0.25})`;
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.arc(x, y, Math.random() * 1.8 + 0.3, 0, Math.PI * 2);
         ctx.fill();
       }
-
-      // 微細なひび・模様で下地感を追加
       ctx.strokeStyle = 'rgba(140,135,128,0.12)';
       ctx.lineWidth = 0.8;
       for (let i = 0; i < 30; i++) {
-        const x0 = Math.random() * W;
-        const y0 = Math.random() * H;
+        const x0 = Math.random() * W, y0 = Math.random() * H;
         ctx.beginPath();
         ctx.moveTo(x0, y0);
         ctx.lineTo(x0 + (Math.random()-0.5)*60, y0 + (Math.random()-0.5)*60);
@@ -189,121 +191,127 @@
 
     function markTextureDirty() {
       const mesh = document.getElementById('wall').getObject3D('mesh');
-      if (mesh && mesh.material && mesh.material.map) {
+      if (mesh && mesh.material && mesh.material.map)
         mesh.material.map.needsUpdate = true;
-      }
     }
 
-    /* ==================== モルタル塗り ==================== */
-    // モルタルカラー (濡れた状態のセメントグレー)
-    const MORTAR_R = 105, MORTAR_G = 102, MORTAR_B = 95;
+    /* ==================== paintBlade ====================
+       uvHits: UV座標の配列 (刃の上端〜下端)
+       これを使って刃の幅全体でモルタルを描画する          */
+    let lastCenterUV = null;
 
-    let lastUV = null; // 前フレームの UV 位置 (ストローク方向計算用)
+    function paintBlade(uvHits) {
+      if (uvHits.length < 2) return;
 
-    function paintAt(uv) {
-      const cx = uv.x * W;
-      const cy = (1 - uv.y) * H;
+      // UV → Canvas 座標
+      const pts = uvHits.map(uv => ({
+        x: uv.x * W,
+        y: (1 - uv.y) * H
+      }));
 
-      /* --- ストローク方向を計算 --- */
-      let angle  = 0;
-      let speed  = 0;
-      if (lastUV) {
-        const ddx = (uv.x - lastUV.x) * W;
-        const ddy = -(uv.y - lastUV.y) * H; // Y反転
-        speed = Math.sqrt(ddx*ddx + ddy*ddy);
-        if (speed > 0.5) angle = Math.atan2(ddy, ddx);
+      const first  = pts[0];
+      const last   = pts[pts.length - 1];
+      const mid    = pts[Math.floor(pts.length / 2)];
+      const midUV  = uvHits[Math.floor(uvHits.length / 2)];
+
+      // 刃の軸方向 (Canvas 上の角度)
+      const bdx = last.x - first.x;
+      const bdy = last.y - first.y;
+      const bladeLen = Math.sqrt(bdx*bdx + bdy*bdy); // Canvas上の刃の長さ(px)
+      const bladeAngle = Math.atan2(bdy, bdx);
+
+      // ストロークの横幅 (刃の動き速度で変化)
+      let speed = 0;
+      if (lastCenterUV) {
+        const mdx = (midUV.x - lastCenterUV.x) * W;
+        const mdy = -(midUV.y - lastCenterUV.y) * H;
+        speed = Math.sqrt(mdx*mdx + mdy*mdy);
       }
-      lastUV = { x: uv.x, y: uv.y };
+      lastCenterUV = { x: midUV.x, y: midUV.y };
+      const strokeW = 20 + Math.min(speed * 1.5, 30); // 20〜50px
 
-      const r = 48;                                      // 半径(ピクセル)
-      const eLen = Math.min(speed * 3, 90) + r;         // 楕円の長径 (速いほど長い)
-      const eShort = r * 0.55;                           // 楕円の短径 (鏝の幅感)
+      /* --- 1. 刃の塗り本体 (各サンプル点に小さな楕円) --- */
+      for (const pt of pts) {
+        const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, strokeW);
+        g.addColorStop(0,   `rgba(${MORTAR_R+6},${MORTAR_G+4},${MORTAR_B+2},0.78)`);
+        g.addColorStop(0.65,`rgba(${MORTAR_R},${MORTAR_G},${MORTAR_B},0.5)`);
+        g.addColorStop(1,   `rgba(${MORTAR_R},${MORTAR_G},${MORTAR_B},0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, strokeW, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-      /* --- 1. モルタルの本体 (方向性のある楕円グラデーション) --- */
+      /* --- 2. 鏝の刃跡 (上下エッジに薄い筋) --- */
       ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(angle);
+      ctx.translate(mid.x, mid.y);
+      ctx.rotate(bladeAngle);
 
-      const grad = ctx.createLinearGradient(-eLen, 0, eLen, 0);
-      grad.addColorStop(0,    `rgba(${MORTAR_R},${MORTAR_G},${MORTAR_B},0)`);
-      grad.addColorStop(0.08, `rgba(${MORTAR_R},${MORTAR_G},${MORTAR_B},0.85)`);
-      grad.addColorStop(0.5,  `rgba(${MORTAR_R+8},${MORTAR_G+6},${MORTAR_B+4},0.92)`);
-      grad.addColorStop(0.92, `rgba(${MORTAR_R},${MORTAR_G},${MORTAR_B},0.85)`);
-      grad.addColorStop(1,    `rgba(${MORTAR_R},${MORTAR_G},${MORTAR_B},0)`);
-
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, eLen, eShort, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      /* --- 2. 鏝跡の筋 (刃の端に沿った細いライン) --- */
-      // 刃の幅分の線 → 上下 2 本でエッジ感
-      ctx.strokeStyle = `rgba(${MORTAR_R+22},${MORTAR_G+20},${MORTAR_B+18},0.45)`;
-      ctx.lineWidth = 1.2;
+      const halfBlade = bladeLen / 2;
+      ctx.strokeStyle = `rgba(${MORTAR_R+25},${MORTAR_G+22},${MORTAR_B+20},0.48)`;
+      ctx.lineWidth = 1.4;
       [-1, 1].forEach(sign => {
         ctx.beginPath();
-        ctx.moveTo(-eLen * 0.85, sign * eShort * 0.88);
-        ctx.lineTo( eLen * 0.85, sign * eShort * 0.88);
+        ctx.moveTo(-halfBlade * 0.92, sign * strokeW * 0.82);
+        ctx.lineTo( halfBlade * 0.92, sign * strokeW * 0.82);
         ctx.stroke();
       });
 
-      /* --- 3. 中央のハイライト (濡れたモルタルの光沢) --- */
-      const hiGrad = ctx.createLinearGradient(-eLen * 0.6, 0, eLen * 0.6, 0);
-      hiGrad.addColorStop(0,   'rgba(200,198,190,0)');
-      hiGrad.addColorStop(0.4, 'rgba(200,198,190,0.18)');
-      hiGrad.addColorStop(0.6, 'rgba(200,198,190,0.18)');
-      hiGrad.addColorStop(1,   'rgba(200,198,190,0)');
-      ctx.fillStyle = hiGrad;
+      /* --- 3. 中央ハイライト (濡れた光沢) --- */
+      const hi = ctx.createLinearGradient(-halfBlade * 0.65, 0, halfBlade * 0.65, 0);
+      hi.addColorStop(0,   'rgba(195,192,184,0)');
+      hi.addColorStop(0.35,'rgba(195,192,184,0.16)');
+      hi.addColorStop(0.65,'rgba(195,192,184,0.16)');
+      hi.addColorStop(1,   'rgba(195,192,184,0)');
+      ctx.fillStyle = hi;
       ctx.beginPath();
-      ctx.ellipse(0, 0, eLen * 0.6, eShort * 0.3, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, halfBlade * 0.65, strokeW * 0.28, 0, 0, Math.PI * 2);
       ctx.fill();
-
       ctx.restore();
 
-      /* --- 4. モルタルの粒感テクスチャ --- */
-      const grainCount = 28;
-      for (let i = 0; i < grainCount; i++) {
-        // ストローク範囲内にランダム配置
-        const gx = cx + (Math.random() - 0.5) * eLen * 2;
-        const gy = cy + (Math.random() - 0.5) * eShort * 2.2;
-        // 楕円内チェック (簡易)
-        const nx = ((gx - cx) * Math.cos(-angle) - (gy - cy) * Math.sin(-angle));
-        const ny = ((gx - cx) * Math.sin(-angle) + (gy - cy) * Math.cos(-angle));
-        if ((nx/eLen)**2 + (ny/eShort)**2 > 1) continue;
-
-        const v = Math.floor(88 + Math.random() * 38);
-        const a = 0.25 + Math.random() * 0.45;
-        ctx.fillStyle = `rgba(${v},${v-1},${v-3},${a})`;
+      /* --- 4. 粒感テクスチャ --- */
+      for (let i = 0; i < 45; i++) {
+        const t  = Math.random();
+        const p  = pts[Math.min(Math.floor(t * pts.length), pts.length - 1)];
+        const gx = p.x + (Math.random()-0.5) * strokeW * 2.4;
+        const gy = p.y + (Math.random()-0.5) * strokeW * 2.4;
+        const v  = Math.floor(88 + Math.random() * 40);
+        ctx.fillStyle = `rgba(${v},${v-1},${v-3},${0.22+Math.random()*0.42})`;
         ctx.beginPath();
-        ctx.arc(gx, gy, Math.random() * 1.8 + 0.3, 0, Math.PI * 2);
+        ctx.arc(gx, gy, Math.random() * 1.9 + 0.3, 0, Math.PI * 2);
         ctx.fill();
       }
 
       /* --- 5. 厚みマップ更新 & 塗りすぎ警告 --- */
-      const x0 = Math.max(0, Math.floor(cx - r));
-      const x1 = Math.min(W,  Math.ceil(cx + r));
-      const y0 = Math.max(0, Math.floor(cy - r));
-      const y1 = Math.min(H,  Math.ceil(cy + r));
-      let avgT = 0, cnt = 0;
-      for (let y = y0; y < y1; y++) {
-        for (let x = x0; x < x1; x++) {
-          const d2 = (x-cx)**2 + (y-cy)**2;
-          if (d2 > r*r) continue;
-          const idx = y * W + x;
-          if (Math.random() < (1 - Math.sqrt(d2)/r) * 0.3) {
-            if (thicknessMap[idx] < 255) thicknessMap[idx]++;
+      let avgT = 0, avgCnt = 0;
+      for (const pt of pts) {
+        const r  = Math.ceil(strokeW);
+        const x0 = Math.max(0, Math.floor(pt.x - r));
+        const x1 = Math.min(W, Math.ceil(pt.x + r));
+        const y0 = Math.max(0, Math.floor(pt.y - r));
+        const y1 = Math.min(H, Math.ceil(pt.y + r));
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const d2 = (x-pt.x)**2 + (y-pt.y)**2;
+            if (d2 > r*r) continue;
+            const idx = y * W + x;
+            if (Math.random() < (1 - Math.sqrt(d2)/r) * 0.22) {
+              if (thicknessMap[idx] < 255) thicknessMap[idx]++;
+            }
+            avgT += thicknessMap[idx]; avgCnt++;
           }
-          avgT += thicknessMap[idx]; cnt++;
         }
       }
-      if (cnt) avgT /= cnt;
-
-      if (avgT > 5) {
+      if (avgCnt > 0 && avgT / avgCnt > 5) {
+        ctx.save();
+        ctx.translate(mid.x, mid.y);
+        ctx.rotate(bladeAngle);
         ctx.strokeStyle = 'rgba(255,80,60,0.55)';
         ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, halfBlade * 0.65, strokeW * 0.65, 0, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.restore();
       }
 
       markTextureDirty();
@@ -314,22 +322,21 @@
       let painted = 0;
       for (let i = 0; i < thicknessMap.length; i++) if (thicknessMap[i] > 0) painted++;
       document.getElementById('hudCoverage')
-              .setAttribute('value', `塗布率: ${(painted/thicknessMap.length*100).toFixed(0)}%`);
+        .setAttribute('value', `塗布率: ${(painted/thicknessMap.length*100).toFixed(0)}%`);
     }
 
     let msgTimer = null;
     function setMessage(msg) {
       document.getElementById('hudMessage').setAttribute('value', msg);
       clearTimeout(msgTimer);
-      msgTimer = setTimeout(() => {
-        document.getElementById('hudMessage').setAttribute('value', '');
-      }, 4000);
+      msgTimer = setTimeout(() =>
+        document.getElementById('hudMessage').setAttribute('value', ''), 4000);
     }
 
     document.getElementById('resetBtn').addEventListener('click', () => {
       thicknessMap = new Uint8Array(W * H);
       drawBaseTexture();
-      lastUV = null;
+      lastCenterUV = null;
       markTextureDirty();
       updateCoverage();
       setMessage('壁をリセットしました');
@@ -342,42 +349,81 @@
         if (t > 0) painted++;
         if (t >= 2 && t <= 5) target++;
       }
-      const cov  = (painted / thicknessMap.length * 100).toFixed(0);
-      const uni  = painted > 0 ? (target / painted * 100).toFixed(0) : 0;
-      const tot  = ((painted/thicknessMap.length) * (target/Math.max(painted,1)) * 100).toFixed(0);
+      const cov = (painted / thicknessMap.length * 100).toFixed(0);
+      const uni = painted > 0 ? (target / painted * 100).toFixed(0) : 0;
+      const tot = ((painted/thicknessMap.length) * (target/Math.max(painted,1)) * 100).toFixed(0);
       setMessage(`塗布率 ${cov}% / 均一 ${uni}% / 総合 ${tot}点`);
     });
 
-    /* ==================== 鏝コンポーネント ==================== */
+    /* ==================== 鏝コンポーネント ====================
+       THREE.Raycaster を使って刃の縦方向9点からレイを飛ばす
+       → 刃全体の長さ(26cm)で壁を塗れる                      */
     AFRAME.registerComponent('trowel', {
       init: function () {
-        this.lastTick = 0;
-        this.covCount = 0;
-        this.mouseDown = false;
+        this.lastTick    = 0;
+        this.covCount    = 0;
+        this.mouseDown   = false;
+
+        // Three.js レイキャスター (毎フレーム再利用)
+        this.threeRC  = new THREE.Raycaster();
+        this.threeRC.far = 0.08; // 刃から壁まで最大8cm
+
+        // 刃のローカル座標サンプル点 (Y: -0.13〜+0.13, Z: -0.042)
+        // 刃の高さ 0.26m を 9 分割
+        const BLADE_HALF = 0.13;
+        const BLADE_Z    = -0.042;
+        const SAMPLES    = 9;
+        this.bladeLocalPts = [];
+        for (let i = 0; i < SAMPLES; i++) {
+          const t = i / (SAMPLES - 1);           // 0→1
+          const y = (t - 0.5) * BLADE_HALF * 2; // -0.13→+0.13
+          this.bladeLocalPts.push(new THREE.Vector3(0, y, BLADE_Z));
+        }
+
+        this._worldPt  = new THREE.Vector3();
+        this._forward  = new THREE.Vector3();
+
         window.addEventListener('mousedown', () => { this.mouseDown = true; });
         window.addEventListener('mouseup',   () => { this.mouseDown = false; });
       },
+
       tick: function () {
         const now = performance.now();
         if (now - this.lastTick < 16) return;
         this.lastTick = now;
 
-        const raycaster = this.el.components.raycaster;
-        if (!raycaster) return;
-        const inters = raycaster.intersections;
-        if (!inters || inters.length === 0) { lastUV = null; return; }
-
-        let hit = null;
-        for (const it of inters) {
-          const el = it.object && it.object.el;
-          if (el && el.id === 'wall') { hit = it; break; }
-        }
-        if (!hit) { lastUV = null; return; }
-
+        // PC テスト: マウス押下中のみ / Quest: 常時
         const isXR = sceneEl.is('vr-mode') || sceneEl.is('ar-mode');
-        if (!isXR && !this.mouseDown) { lastUV = null; return; }
+        if (!isXR && !this.mouseDown) { lastCenterUV = null; return; }
 
-        paintAt(hit.uv);
+        const obj = this.el.object3D;
+        if (!obj) return;
+
+        // 壁のメッシュを取得
+        const wallEl = document.getElementById('wall');
+        if (!wallEl) return;
+        const wallMesh = wallEl.getObject3D('mesh');
+        if (!wallMesh) return;
+
+        // コントローラーの前方向 (ローカル -Z → ワールド空間)
+        this._forward.set(0, 0, -1).transformDirection(obj.matrixWorld);
+
+        // 刃の9点から壁へレイを飛ばして UV 座標を収集
+        const uvHits = [];
+        for (const lp of this.bladeLocalPts) {
+          // ローカル座標 → ワールド座標
+          this._worldPt.copy(lp).applyMatrix4(obj.matrixWorld);
+          this.threeRC.set(this._worldPt, this._forward);
+          const hits = this.threeRC.intersectObject(wallMesh, true);
+          if (hits.length > 0 && hits[0].uv) {
+            uvHits.push({ x: hits[0].uv.x, y: hits[0].uv.y });
+          }
+        }
+
+        if (uvHits.length < 2) { lastCenterUV = null; return; }
+
+        paintBlade(uvHits);
+
         if (++this.covCount >= 10) { this.covCount = 0; updateCoverage(); }
       }
     });
