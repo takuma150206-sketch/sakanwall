@@ -72,8 +72,8 @@
           if (typeof setMessage     === 'function') setMessage('壁を設置しました ✓');
         });
 
-        /* ---- Xボタン(左コントローラー): 鏝板に補充 ---- */
-        document.getElementById('leftHand').addEventListener('xbuttondown', () => {
+        /* ---- 左グリップボタン(後ろ): 鏝板に補充 ---- */
+        document.getElementById('leftHand').addEventListener('gripdown', () => {
           hawkMortar = 100;
           if (typeof updateMortarVisuals === 'function') updateMortarVisuals();
           if (typeof setMessage          === 'function') setMessage('鏝板を補充しました 🪣');
@@ -178,11 +178,11 @@
   </style>
 </head>
 <body>
-  <div id="version">v1.7</div>
+  <div id="version">v1.8</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     🅐 コントローラー位置に壁を設置<br>
-    Ⓧ(左コントローラー) 鏝板に補充<br>
+    左グリップ(後ろ) 鏝板に補充<br>
     右トリガー + 鏝板に近づける → すくう<br>
     壁に刃を近づける → 塗る (泥が必要)<br>
     左手で「採点」「リセット」
@@ -245,11 +245,11 @@
       <!-- 刃 (blade-shape コンポーネント) y+0.035オフセット -->
       <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
 
-      <!-- 鏝に乗ったモルタル: 刃の裏側(ユーザー側)に表示
-           blade-shape は z=-0.042 中心、厚み2.5mm → 裏面は z≈-0.039
-           y は刃エンティティと同じ +0.035 -->
+      <!-- 鏝に乗ったモルタル: 刃の壁側(前面)に表示
+           blade z=-0.042, 厚み2.5mm → 前面 z≈-0.04325
+           z=-0.046 で前面より少し前に浮かせる -->
       <a-box id="trowelMortarViz"
-             position="0 0.035 -0.038"
+             position="0 0.035 -0.046"
              width="0.080" height="0.198" depth="0.006"
              color="#828278"
              material="roughness:0.9; metalness:0; opacity:0; transparent:true;"></a-box>
