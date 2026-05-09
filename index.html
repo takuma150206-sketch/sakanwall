@@ -6,44 +6,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
-  <!-- ===== コンポーネントは a-scene より先に登録 ===== -->
   <script>
-    /* ---------- 刃の形状: 下部長方形 + 上部三角の五角形 ----------
-       写真の鏝 (240mm) に合わせた形状
-         全長  : 240mm (TOTAL)
-         幅    : 68mm  (W)
-         長方形部分: 170mm、先端三角: 70mm
-         厚み  : 2mm   (D)
-    */
+    /* ============================================================
+       鏝の寸法 (すべてメートル単位)
+
+       座標系:
+         コントローラー原点 = (0, 0, 0)
+         Y軸 = 上下  Z軸 = 前後 (−Z が壁方向)
+
+       首中心   : y=0.000, z=−0.020
+       ──────────────────────────────
+       柄
+         下端   : y=−0.080  (首から 80mm 下)
+         上端   : y=+0.045  (125mm − 80mm)
+         中心   : y=−0.0175
+         長さ   : 0.125m  半径 0.015m
+
+       刃
+         下端   : y=−0.085  (首から 85mm 下)
+         上端   : y=+0.155  (240mm − 85mm)
+         中心Y  : +0.035   → エンティティ offset
+         長方形部: 200mm (local y −0.120 〜 +0.080)
+         三角部 : 40mm  (local y +0.080 〜 +0.120)
+         幅     : 84mm (hw = 0.042)
+    ============================================================ */
+
+    /* ---------- 刃の形状 ---------- */
     AFRAME.registerComponent('blade-shape', {
       init: function () {
-        const W     = 0.068;
-        const RECT  = 0.170;
-        const TOTAL = 0.240;
-        const D     = 0.002;
-        const hw    = W / 2;
-        const bot   = -TOTAL / 2;   // -0.120
-        const rTop  = bot + RECT;   // +0.050
-        const tip   = bot + TOTAL;  // +0.120
+        const hw    = 0.042;   // 半幅 42mm
+        const RECT  = 0.200;   // 長方形部 200mm
+        const TOTAL = 0.240;   // 全長 240mm
+        const D     = 0.0025;  // 厚み 2.5mm
+        const bot   = -TOTAL / 2;       // −0.120
+        const rTop  = bot + RECT;        // +0.080
+        const tip   = bot + TOTAL;       // +0.120
 
-        // 2D 輪郭 (下から時計回り)
         const shape = new THREE.Shape();
         shape.moveTo(-hw, bot);   // 左下
         shape.lineTo( hw, bot);   // 右下
-        shape.lineTo( hw, rTop);  // 右上（長方形終わり）
+        shape.lineTo( hw, rTop);  // 右上(長方形終端)
         shape.lineTo(  0, tip);   // 先端
-        shape.lineTo(-hw, rTop);  // 左上（長方形終わり）
+        shape.lineTo(-hw, rTop);  // 左上(長方形終端)
         shape.closePath();
 
         const geo = new THREE.ExtrudeGeometry(shape, {
           depth: D, bevelEnabled: false
         });
-        // ExtrudeGeometry はZ+ 方向に押し出されるので中央に戻す
-        geo.translate(0, 0, -D / 2);
+        geo.translate(0, 0, -D / 2);   // Z方向中央揃え
 
-        // 研磨鋼の質感
         const mat = new THREE.MeshStandardMaterial({
-          color: 0xc6c8cc,
+          color: 0xc4c6ca,
           metalness: 0.90,
           roughness: 0.14,
           side: THREE.DoubleSide
@@ -52,31 +65,33 @@
       }
     });
 
-    /* ---------- 鏝コンポーネント (刃の縦9点レイキャスト) ---------- */
+    /* ---------- 鏝コンポーネント (刃9点レイキャスト) ---------- */
     AFRAME.registerComponent('trowel', {
       init: function () {
         this.lastTick  = 0;
         this.covCount  = 0;
         this.mouseDown = false;
 
-        this.threeRC = new THREE.Raycaster();
-        this.threeRC.far = 0.08;
+        this.threeRC      = new THREE.Raycaster();
+        this.threeRC.far  = 0.08;
 
-        // 刃のローカル座標サンプル (240mm → ±0.12m, z=-0.042)
-        const BLADE_HALF = 0.12;
-        const BLADE_Z    = -0.042;
-        const SAMPLES    = 9;
+        /* 刃のローカル座標サンプル
+           コントローラー空間: y −0.085 〜 +0.155、z −0.042 */
+        const Y_BOT   = -0.085;
+        const Y_TOP   = +0.155;
+        const BLADE_Z = -0.042;
+        const SAMPLES = 9;
         this.bladeLocalPts = [];
         for (let i = 0; i < SAMPLES; i++) {
           const t = i / (SAMPLES - 1);
-          const y = (t - 0.5) * BLADE_HALF * 2;
+          const y = Y_BOT + t * (Y_TOP - Y_BOT);
           this.bladeLocalPts.push(new THREE.Vector3(0, y, BLADE_Z));
         }
 
         this._worldPt = new THREE.Vector3();
         this._fwd     = new THREE.Vector3();
 
-        window.addEventListener('mousedown', () => { this.mouseDown = true; });
+        window.addEventListener('mousedown', () => { this.mouseDown = true;  });
         window.addEventListener('mouseup',   () => { this.mouseDown = false; });
       },
 
@@ -94,22 +109,18 @@
         const wallMesh = document.getElementById('wall').getObject3D('mesh');
         if (!wallMesh) return;
 
-        // コントローラー前方向 (local -Z → world)
         this._fwd.set(0, 0, -1).transformDirection(obj.matrixWorld);
 
-        // 刃の9点から壁へレイを飛ばして UV 収集
         const uvHits = [];
         for (const lp of this.bladeLocalPts) {
           this._worldPt.copy(lp).applyMatrix4(obj.matrixWorld);
           this.threeRC.set(this._worldPt, this._fwd);
           const hits = this.threeRC.intersectObject(wallMesh, true);
-          if (hits.length > 0 && hits[0].uv) {
+          if (hits.length > 0 && hits[0].uv)
             uvHits.push({ x: hits[0].uv.x, y: hits[0].uv.y });
-          }
         }
 
         if (uvHits.length < 2) { lastCenterUV = null; return; }
-
         paintBlade(uvHits);
         if (++this.covCount >= 10) { this.covCount = 0; updateCoverage(); }
       }
@@ -122,8 +133,7 @@
       position: fixed; top: 12px; left: 12px;
       background: rgba(0,0,0,0.65); color: #fff;
       padding: 10px 14px; border-radius: 8px;
-      font-size: 13px; line-height: 1.6; z-index: 100;
-      max-width: 320px;
+      font-size: 13px; line-height: 1.6; z-index: 100; max-width: 320px;
     }
     #version {
       position: fixed; top: 12px; right: 12px;
@@ -134,8 +144,7 @@
     #enterAR {
       position: fixed; bottom: 24px; right: 24px;
       padding: 18px 36px; font-size: 18px;
-      background: #555; color: white;
-      border: none; border-radius: 10px;
+      background: #555; color: white; border: none; border-radius: 10px;
       cursor: pointer; z-index: 100; font-weight: bold;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
@@ -144,13 +153,12 @@
     #status {
       position: fixed; bottom: 24px; left: 24px;
       background: rgba(0,0,0,0.7); color: #fff;
-      padding: 8px 12px; border-radius: 6px;
-      font-size: 12px; z-index: 100;
+      padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 100;
     }
   </style>
 </head>
 <body>
-  <div id="version">v1.0</div>
+  <div id="version">v1.1</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     右手の鏝の刃を壁に近づけるだけで全刃幅で塗れる<br>
@@ -171,16 +179,13 @@
     </a-assets>
 
     <!-- 壁 -->
-    <a-plane
-      id="wall"
-      position="0 1.3 -0.7"
-      width="1.2" height="1.0"
-      material="src: #wallCanvas; shader: standard; roughness: 0.95; metalness: 0;"></a-plane>
+    <a-plane id="wall" position="0 1.3 -0.7" width="1.2" height="1.0"
+             material="src: #wallCanvas; shader: standard; roughness: 0.95; metalness: 0;"></a-plane>
 
     <!-- HUD -->
     <a-entity position="-0.95 1.75 -0.55" rotation="0 35 0">
       <a-plane width="0.7" height="0.32" color="#000" opacity="0.65"></a-plane>
-      <a-text value="施工状況" position="0 0.11 0.01" align="center" color="#fff" width="1.5"></a-text>
+      <a-text value="施工状況"  position="0 0.11 0.01" align="center" color="#fff" width="1.5"></a-text>
       <a-text id="hudCoverage" value="塗布率: 0%" position="0 0.01 0.01" align="center" color="#9F9" width="1.5"></a-text>
       <a-text id="hudMessage"  value="" position="0 -0.10 0.01" align="center" color="#FFD700" width="1.3" wrap-count="22"></a-text>
     </a-entity>
@@ -194,44 +199,58 @@
     </a-entity>
 
     <!--
-      ===== 右手 = 鏝 (写真の240mm 鏝) =====
-      柄  : 短めの太い木製円柱 (Y軸・コントローラー位置)
-      首  : 短い金属シャフト (Z軸・前方へ)
-      刃  : blade-shape コンポーネントで五角形 (240mm × 68mm)
+      ===== 右手 = 鏝 =====
+
+      Y 軸方向の配置 (z=0 基準):
+        y=+0.045  柄の上端
+        y= 0.000  ← 首の中心 (コントローラー基準点)
+        y=−0.080  柄の下端 / 柄頭
+
+      Z 軸方向:
+        z= 0.000  柄・首の付根
+        z=−0.020  首の中心
+        z=−0.040  首の先端
+        z=−0.042  刃の中心面
+
+      刃のエンティティは y=+0.035 オフセット:
+        刃の下端 (コントローラー空間) = 0.035 − 0.120 = −0.085 (首から85mm下)
+        刃の上端 (コントローラー空間) = 0.035 + 0.120 = +0.155
     -->
-    <a-entity
-      id="rightHand"
-      oculus-touch-controls="hand: right; model: false"
-      trowel>
+    <a-entity id="rightHand"
+              oculus-touch-controls="hand: right; model: false"
+              trowel>
 
-      <!-- 柄頭 (丸い端) -->
-      <a-sphere position="0 -0.055 0" radius="0.021"
-                color="#C8A870" material="roughness: 0.8;"></a-sphere>
+      <!-- 柄頭: 柄の下端 y=−0.080 -->
+      <a-sphere position="0 -0.080 0" radius="0.018"
+                color="#C4A068" material="roughness: 0.75;"></a-sphere>
 
-      <!-- 木製の柄: 写真は短め太め (90mm × 直径38mm) -->
-      <a-cylinder position="0 0 0" radius="0.019" height="0.09"
+      <!-- 木製の柄: 長さ125mm、直径30mm(半径15mm)、中心 y=−0.0175 -->
+      <a-cylinder position="0 -0.0175 0" radius="0.015" height="0.125"
                   color="#D8BC84" material="roughness: 0.70;"></a-cylinder>
 
-      <!-- 金属の首 (短い・Z軸方向) -->
-      <a-cylinder position="0 0 -0.02" radius="0.008" height="0.04"
+      <!-- 柄の上端キャップ(木と金属の境) y=+0.045 -->
+      <a-cylinder position="0 0.045 0" radius="0.013" height="0.008"
+                  color="#7A7A7A" material="metalness: 0.7; roughness: 0.4;"></a-cylinder>
+
+      <!-- 首: Z軸方向、長さ40mm、中心 z=−0.020 -->
+      <a-cylinder position="0 0 -0.020" radius="0.007" height="0.040"
                   rotation="90 0 0"
                   color="#888888" material="metalness: 0.80; roughness: 0.28;"></a-cylinder>
 
-      <!-- 刃: blade-shape コンポーネントで五角形
-           position Y=0: コントローラー中心に刃の中心を合わせる -->
-      <a-entity blade-shape position="0 0 -0.042"></a-entity>
+      <!-- 刃: blade-shape コンポーネント
+           エンティティ position y=+0.035 でオフセット
+           → 刃の下端がコントローラー y=−0.085 (首から85mm下) になる -->
+      <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
 
     </a-entity>
 
     <!-- 左手 -->
-    <a-entity
-      id="leftHand"
-      laser-controls="hand: left"
-      raycaster="objects: #resetBtn, #gradeBtn; far: 3; lineColor: #ffffff; lineOpacity: 0.5">
+    <a-entity id="leftHand" laser-controls="hand: left"
+              raycaster="objects: #resetBtn, #gradeBtn; far: 3; lineColor: #ffffff; lineOpacity: 0.5">
     </a-entity>
 
-    <a-light type="ambient" intensity="0.7"></a-light>
-    <a-light type="directional" intensity="0.9" position="1 2 1"></a-light>
+    <a-light type="ambient"     intensity="0.70"></a-light>
+    <a-light type="directional" intensity="0.90" position="1 2 1"></a-light>
     <a-light type="directional" intensity="0.25" position="-1 1 0.5" color="#c8d8ff"></a-light>
   </a-scene>
 
@@ -249,20 +268,16 @@
         const vrOK  = await navigator.xr.isSessionSupported('immersive-vr');
         if (arSupported) {
           statusEl.textContent = '✓ AR (パススルー) 対応';
-          enterARBtn.textContent = 'Enter AR (MR)';
-          enterARBtn.disabled = false;
+          enterARBtn.textContent = 'Enter AR (MR)'; enterARBtn.disabled = false;
         } else if (vrOK) {
           statusEl.textContent = '⚠ VR モードで起動';
-          enterARBtn.textContent = 'Enter VR';
-          enterARBtn.disabled = false;
-        } else {
-          statusEl.textContent = '✗ XR 非対応';
-        }
+          enterARBtn.textContent = 'Enter VR'; enterARBtn.disabled = false;
+        } else { statusEl.textContent = '✗ XR 非対応'; }
       } catch(e) { statusEl.textContent = 'エラー: ' + e.message; }
     }
     checkAR();
 
-    const UI_IDS = ['enterAR', 'status', 'info', 'version'];
+    const UI_IDS = ['enterAR','status','info','version'];
     enterARBtn.addEventListener('click', () => {
       if (arSupported) sceneEl.enterAR(); else sceneEl.enterVR();
     });
@@ -276,7 +291,7 @@
     const ctx        = wallCanvas.getContext('2d');
     const W = wallCanvas.width, H = wallCanvas.height;
     let thicknessMap = new Uint8Array(W * H);
-    const MR = 105, MG = 102, MB = 95; // モルタルグレー
+    const MR = 105, MG = 102, MB = 95;
 
     function drawBaseTexture() {
       ctx.fillStyle = '#C8C2B8';
@@ -312,16 +327,14 @@
 
     function paintBlade(uvHits) {
       if (uvHits.length < 2) return;
+      const pts    = uvHits.map(uv => ({ x: uv.x * W, y: (1 - uv.y) * H }));
+      const first  = pts[0];
+      const last   = pts[pts.length - 1];
+      const mid    = pts[Math.floor(pts.length / 2)];
+      const midUV  = uvHits[Math.floor(uvHits.length / 2)];
 
-      const pts   = uvHits.map(uv => ({ x: uv.x * W, y: (1 - uv.y) * H }));
-      const first = pts[0];
-      const last  = pts[pts.length - 1];
-      const mid   = pts[Math.floor(pts.length / 2)];
-      const midUV = uvHits[Math.floor(uvHits.length / 2)];
-
-      const bdx = last.x - first.x;
-      const bdy = last.y - first.y;
-      const bladeLen  = Math.sqrt(bdx*bdx + bdy*bdy);
+      const bdx = last.x - first.x, bdy = last.y - first.y;
+      const bladeLen   = Math.sqrt(bdx*bdx + bdy*bdy);
       const bladeAngle = Math.atan2(bdy, bdx);
 
       let speed = 0;
@@ -331,10 +344,9 @@
         speed = Math.sqrt(mdx*mdx + mdy*mdy);
       }
       lastCenterUV = { x: midUV.x, y: midUV.y };
-
       const strokeW = 20 + Math.min(speed * 1.5, 30);
 
-      // 1. 各サンプル点に小楕円
+      // 1. 各点に小楕円
       for (const pt of pts) {
         const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, strokeW);
         g.addColorStop(0,    `rgba(${MR+6},${MG+4},${MB+2},0.78)`);
@@ -347,11 +359,11 @@
       }
 
       const halfBlade = bladeLen / 2;
-
-      // 2. 鏝跡エッジ
       ctx.save();
       ctx.translate(mid.x, mid.y);
       ctx.rotate(bladeAngle);
+
+      // 2. 刃跡エッジライン
       ctx.strokeStyle = `rgba(${MR+25},${MG+22},${MB+20},0.48)`;
       ctx.lineWidth = 1.4;
       [-1, 1].forEach(s => {
@@ -363,10 +375,10 @@
 
       // 3. 中央ハイライト
       const hi = ctx.createLinearGradient(-halfBlade * 0.65, 0, halfBlade * 0.65, 0);
-      hi.addColorStop(0,    'rgba(195,192,184,0)');
+      hi.addColorStop(0, 'rgba(195,192,184,0)');
       hi.addColorStop(0.35, 'rgba(195,192,184,0.16)');
       hi.addColorStop(0.65, 'rgba(195,192,184,0.16)');
-      hi.addColorStop(1,    'rgba(195,192,184,0)');
+      hi.addColorStop(1, 'rgba(195,192,184,0)');
       ctx.fillStyle = hi;
       ctx.beginPath();
       ctx.ellipse(0, 0, halfBlade * 0.65, strokeW * 0.28, 0, 0, Math.PI * 2);
@@ -388,7 +400,7 @@
       // 5. 厚みマップ & 塗りすぎ警告
       let avgT = 0, avgCnt = 0;
       for (const pt of pts) {
-        const r  = Math.ceil(strokeW);
+        const r = Math.ceil(strokeW);
         for (let y = Math.max(0,Math.floor(pt.y-r)); y < Math.min(H,Math.ceil(pt.y+r)); y++) {
           for (let x = Math.max(0,Math.floor(pt.x-r)); x < Math.min(W,Math.ceil(pt.x+r)); x++) {
             const d2 = (x-pt.x)**2 + (y-pt.y)**2;
