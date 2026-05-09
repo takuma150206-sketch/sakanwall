@@ -72,8 +72,8 @@
           if (typeof setMessage     === 'function') setMessage('壁を設置しました ✓');
         });
 
-        /* ---- Ⓑボタン: 鏝板に補充 ---- */
-        this.el.addEventListener('bbuttondown', () => {
+        /* ---- Xボタン(左コントローラー): 鏝板に補充 ---- */
+        document.getElementById('leftHand').addEventListener('xbuttondown', () => {
           hawkMortar = 100;
           if (typeof updateMortarVisuals === 'function') updateMortarVisuals();
           if (typeof setMessage          === 'function') setMessage('鏝板を補充しました 🪣');
@@ -178,11 +178,11 @@
   </style>
 </head>
 <body>
-  <div id="version">v1.5</div>
+  <div id="version">v1.7</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     🅐 コントローラー位置に壁を設置<br>
-    🅑 鏝板にモルタルを補充<br>
+    Ⓧ(左コントローラー) 鏝板に補充<br>
     右トリガー + 鏝板に近づける → すくう<br>
     壁に刃を近づける → 塗る (泥が必要)<br>
     左手で「採点」「リセット」
@@ -245,10 +245,11 @@
       <!-- 刃 (blade-shape コンポーネント) y+0.035オフセット -->
       <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
 
-      <!-- 鏝に乗ったモルタル (刃の長方形部分を覆う薄いレイヤー)
-           opacity で量を表現。scale z は厚み感。 -->
+      <!-- 鏝に乗ったモルタル: 刃の裏側(ユーザー側)に表示
+           blade-shape は z=-0.042 中心、厚み2.5mm → 裏面は z≈-0.039
+           y は刃エンティティと同じ +0.035 -->
       <a-box id="trowelMortarViz"
-             position="0 0.015 -0.040"
+             position="0 0.035 -0.038"
              width="0.080" height="0.198" depth="0.006"
              color="#828278"
              material="roughness:0.9; metalness:0; opacity:0; transparent:true;"></a-box>
