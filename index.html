@@ -190,7 +190,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v2.3</div>
+  <div id="version">v2.4</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     🅐 壁を設置<br>
@@ -510,8 +510,8 @@
        type: 'paint' → 細かくくっきり / 'smooth' → 広く浅い      */
     function drawKoteNami(mid, halfBlade, bladeAngle, strokeW, intensity, type) {
       const isPaint  = type === 'paint';
-      const spacing  = isPaint ? 7  : 15;   // 線の間隔 (px)
-      const waveAmp  = isPaint ? 2.8 : 1.2; // 線の揺れ幅 (px)
+      const spacing  = isPaint ? 7  : 15;
+      const waveAmp  = isPaint ? 2.8 : 1.2;
       const waveFreq = isPaint ? 0.06 : 0.03;
       const lineW    = isPaint ? 1.4 : 0.9;
       const numLines = Math.ceil((strokeW * 2) / spacing) + 1;
@@ -522,14 +522,13 @@
       ctx.translate(mid.x, mid.y);
       ctx.rotate(bladeAngle);
 
-      for (let i = -Math.floor(numLines / 2); i <= Math.floor(numLines / 2); i++) {
-        const yOff = i * spacing;
+      /* ---- 長辺からの波 (移動方向に垂直) ---- */
+      for (let i = -Math.floor(numLines/2); i <= Math.floor(numLines/2); i++) {
+        const yOff    = i * spacing;
         const falloff = 1 - Math.abs(yOff) / (strokeW * 1.15);
         if (falloff <= 0) continue;
 
         const baseAlpha = (isPaint ? 0.32 : 0.16) * falloff * Math.min(1, intensity);
-
-        // 偶数線 = 暗い谷 / 奇数線 = 明るい山
         const isDark = (i % 2 === 0);
         const r = isDark ? 55  : 175;
         const g = isDark ? 52  : 170;
@@ -538,18 +537,50 @@
         ctx.strokeStyle = `rgba(${r},${g},${b},${baseAlpha.toFixed(3)})`;
         ctx.lineWidth   = lineW;
         ctx.beginPath();
-
         for (let s = 0; s <= STEPS; s++) {
           const x    = -halfBlade + s * (bladeLen / STEPS);
-          // サイン波で自然なゆらぎ
           const wave = Math.sin(x * waveFreq + i * 1.1) * waveAmp
                      + Math.sin(x * waveFreq * 2.3 + i * 0.7) * waveAmp * 0.35;
-          const y    = yOff + wave;
-          if (s === 0) ctx.moveTo(x, y);
-          else         ctx.lineTo(x, y);
+          if (s === 0) ctx.moveTo(x, yOff + wave);
+          else         ctx.lineTo(x, yOff + wave);
         }
         ctx.stroke();
       }
+
+      /* ---- 先端からの波 (移動方向に平行) ----
+         鏝を引くと先端が材料を押し・引きずって
+         刃軸方向に走る筋もできる                */
+      const tipSpacing  = isPaint ? 13 : 24;
+      const tipWaveAmp  = isPaint ? 2.0 : 0.9;
+      const tipWaveFreq = isPaint ? 0.09 : 0.04;
+      const tipLineW    = isPaint ? 1.1 : 0.7;
+      const numTipLines = Math.ceil((halfBlade * 2) / tipSpacing) + 1;
+      const TIP_STEPS   = Math.max(12, Math.ceil(strokeW * 2 / 4));
+
+      for (let j = -Math.floor(numTipLines/2); j <= Math.floor(numTipLines/2); j++) {
+        const yPos    = j * tipSpacing;          // 刃軸上の位置
+        const falloff = 1 - Math.abs(yPos) / (halfBlade * 1.1);
+        if (falloff <= 0) continue;
+
+        const baseAlpha = (isPaint ? 0.20 : 0.09) * falloff * Math.min(1, intensity);
+        const isDark = (j % 2 !== 0);
+        const r = isDark ? 50  : 168;
+        const g = isDark ? 48  : 163;
+        const b = isDark ? 42  : 155;
+
+        ctx.strokeStyle = `rgba(${r},${g},${b},${baseAlpha.toFixed(3)})`;
+        ctx.lineWidth   = tipLineW;
+        ctx.beginPath();
+        for (let s = 0; s <= TIP_STEPS; s++) {
+          const x    = -strokeW + s * (strokeW * 2 / TIP_STEPS);
+          const wave = Math.sin(x * tipWaveFreq + j * 0.9) * tipWaveAmp
+                     + Math.sin(x * tipWaveFreq * 1.8 + j * 1.3) * tipWaveAmp * 0.4;
+          if (s === 0) ctx.moveTo(x, yPos + wave);
+          else         ctx.lineTo(x, yPos + wave);
+        }
+        ctx.stroke();
+      }
+
       ctx.restore();
     }
 
