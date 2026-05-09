@@ -190,7 +190,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v2.4</div>
+  <div id="version">v2.5</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     🅐 壁を設置<br>
@@ -404,14 +404,16 @@
       if (heightMap) heightMap.needsUpdate = true;
     }
 
-    /* 塗り: ハイトマップに白を追加 (盛り上がり) */
-    function paintHeight(uvHits) {
-      const r = Math.round(HW * 0.084 / 1.2 * 0.6); // 刃幅相当
+    /* 塗り: ハイトマップに strokeFactor に応じた高さを追加 */
+    function paintHeight(uvHits, strokeFactor = 1.0) {
+      const r = Math.round(HW * 0.084 / 1.2 * 0.6);
+      const opacity = (0.55 * strokeFactor).toFixed(2);
+      const opacity2 = (0.28 * strokeFactor).toFixed(2);
       for (const uv of uvHits) {
         const cx = uv.x * HW, cy = (1-uv.y) * HH;
         const g = hCtx.createRadialGradient(cx,cy,0,cx,cy,r);
-        g.addColorStop(0,   'rgba(255,255,255,0.55)');
-        g.addColorStop(0.6, 'rgba(255,255,255,0.28)');
+        g.addColorStop(0,   `rgba(255,255,255,${opacity})`);
+        g.addColorStop(0.6, `rgba(255,255,255,${opacity2})`);
         g.addColorStop(1,   'rgba(255,255,255,0)');
         hCtx.fillStyle = g;
         hCtx.beginPath(); hCtx.arc(cx,cy,r,0,Math.PI*2); hCtx.fill();
@@ -604,19 +606,35 @@
         speed=Math.sqrt(mdx*mdx+mdy*mdy);
       }
       lastCenterUV={x:midUV.x,y:midUV.y};
+
       const intensity=Math.min(1,trowelMortar/(TROWEL_MAX*0.25));
+
+      /* ★ ストロークごとにランダムな塗り厚係数 (0.25〜1.0)
+           速く動かすほど薄くなる (遠心効果)             */
+      const speedThin   = Math.max(0, Math.min(1, speed / 18));  // 速度による薄さ
+      const strokeFactor = (0.25 + Math.random() * 0.75) * (1 - speedThin * 0.55);
+
       const strokeW=36+Math.min(speed*1.5,20);
 
+      /* ★ 塗り厚で色を変える
+           strokeFactor高い(厚い) → 暗いモルタル色
+           strokeFactor低い(薄い) → 明るいグレー            */
+      const thick = strokeFactor; // 0.25〜1.0
+      const cr = Math.round(MR - thick * 18);  // 厚いほど暗く
+      const cg = Math.round(MG - thick * 16);
+      const cb = Math.round(MB - thick * 14);
+
       for (const pt of pts) {
+        const alpha = (0.78 * intensity * strokeFactor).toFixed(2);
         const g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,strokeW);
-        g.addColorStop(0,    `rgba(${MR+6},${MG+4},${MB+2},${(0.78*intensity).toFixed(2)})`);
-        g.addColorStop(0.65, `rgba(${MR},${MG},${MB},${(0.50*intensity).toFixed(2)})`);
-        g.addColorStop(1,    `rgba(${MR},${MG},${MB},0)`);
+        g.addColorStop(0,    `rgba(${cr},${cg},${cb},${alpha})`);
+        g.addColorStop(0.65, `rgba(${cr+8},${cg+6},${cb+4},${(alpha*0.65).toFixed(2)})`);
+        g.addColorStop(1,    `rgba(${cr},${cg},${cb},0)`);
         ctx.fillStyle=g; ctx.beginPath(); ctx.arc(pt.x,pt.y,strokeW,0,Math.PI*2); ctx.fill();
       }
       const halfBlade=bladeLen/2;
       ctx.save(); ctx.translate(mid.x,mid.y); ctx.rotate(bladeAngle);
-      ctx.strokeStyle=`rgba(${MR+25},${MG+22},${MB+20},${(0.48*intensity).toFixed(2)})`;
+      ctx.strokeStyle=`rgba(${MR+25},${MG+22},${MB+20},${(0.48*intensity*strokeFactor).toFixed(2)})`;
       ctx.lineWidth=1.4;
       [-1,1].forEach(s=>{
         ctx.beginPath(); ctx.moveTo(-halfBlade*0.92,s*strokeW*0.82);
@@ -624,8 +642,8 @@
       });
       const hi=ctx.createLinearGradient(-halfBlade*0.65,0,halfBlade*0.65,0);
       hi.addColorStop(0,'rgba(195,192,184,0)');
-      hi.addColorStop(0.35,`rgba(195,192,184,${(0.16*intensity).toFixed(2)})`);
-      hi.addColorStop(0.65,`rgba(195,192,184,${(0.16*intensity).toFixed(2)})`);
+      hi.addColorStop(0.35,`rgba(195,192,184,${(0.16*intensity*(1-strokeFactor*0.5)).toFixed(2)})`);
+      hi.addColorStop(0.65,`rgba(195,192,184,${(0.16*intensity*(1-strokeFactor*0.5)).toFixed(2)})`);
       hi.addColorStop(1,'rgba(195,192,184,0)');
       ctx.fillStyle=hi; ctx.beginPath();
       ctx.ellipse(0,0,halfBlade*0.65,strokeW*0.28,0,0,Math.PI*2); ctx.fill();
@@ -633,8 +651,8 @@
       for (let i=0;i<45;i++) {
         const p=pts[Math.min(Math.floor(Math.random()*pts.length),pts.length-1)];
         const gx=p.x+(Math.random()-0.5)*strokeW*2.4, gy=p.y+(Math.random()-0.5)*strokeW*2.4;
-        const v=Math.floor(88+Math.random()*40);
-        ctx.fillStyle=`rgba(${v},${v-1},${v-3},${((0.22+Math.random()*0.42)*intensity).toFixed(2)})`;
+        const v=Math.floor(78+Math.random()*40 - strokeFactor*12); // 厚いほど暗い粒
+        ctx.fillStyle=`rgba(${v},${v-1},${v-3},${((0.22+Math.random()*0.42)*intensity*strokeFactor).toFixed(2)})`;
         ctx.beginPath(); ctx.arc(gx,gy,Math.random()*1.9+0.3,0,Math.PI*2); ctx.fill();
       }
       // 厚みマップ & 塗りすぎ警告
@@ -658,12 +676,12 @@
       }
 
       /* 鏝波: 塗り (くっきり) */
-      drawKoteNami(mid, halfBlade, bladeAngle, strokeW, intensity, 'paint');
+      drawKoteNami(mid, halfBlade, bladeAngle, strokeW, intensity * strokeFactor, 'paint');
 
       markTextureDirty();
 
-      // ハイトマップにも盛り上がりを追加
-      paintHeight(uvHits);
+      // ハイトマップにも盛り上がりを追加 (strokeFactorで高さを変化)
+      paintHeight(uvHits, strokeFactor);
 
       trowelMortar=Math.max(0,trowelMortar-PAINT_COST);
       if(trowelMortar===0) setMessage('泥がなくなりました。鏝板からすくってください');
