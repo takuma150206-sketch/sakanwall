@@ -158,7 +158,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v1.1</div>
+  <div id="version">v1.2</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     右手の鏝の刃を壁に近づけるだけで全刃幅で塗れる<br>
@@ -344,7 +344,8 @@
         speed = Math.sqrt(mdx*mdx + mdy*mdy);
       }
       lastCenterUV = { x: midUV.x, y: midUV.y };
-      const strokeW = 20 + Math.min(speed * 1.5, 30);
+      // 刃幅 84mm → 壁(1.2m / 1024px) → 72px → 半径 36px
+      const strokeW = 36 + Math.min(speed * 1.5, 20);
 
       // 1. 各点に小楕円
       for (const pt of pts) {
