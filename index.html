@@ -190,7 +190,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v2.2</div>
+  <div id="version">v2.3</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     🅐 壁を設置<br>
@@ -213,6 +213,7 @@
       <canvas id="wallCanvas"   width="1024" height="800"></canvas>
       <!-- ハイトマップ用 Canvas (低解像度で十分) -->
       <canvas id="heightCanvas" width="256"  height="200"></canvas>
+      <canvas id="opsCanvas" width="512" height="512"></canvas>
     </a-assets>
 
     <!--
@@ -257,16 +258,10 @@
              material="roughness:0.9; metalness:0; opacity:0; transparent:true;"></a-box>
     </a-entity>
 
-    <!-- ===== 操作説明パネル (右手側) ===== -->
-    <a-entity position="0.95 1.65 -0.60" rotation="0 -30 0">
-      <a-plane width="0.72" height="0.62" color="#000" opacity="0.68"></a-plane>
-      <a-text value="操作方法"            position="0  0.26 0.01" align="center" color="#fff"    width="1.6" font="https://cdn.aframe.io/fonts/mozillavr.fnt"></a-text>
-      <a-text value="A      : 壁を設置"   position="0  0.15 0.01" align="center" color="#80EFFF" width="1.5"></a-text>
-      <a-text value="右G    : 均しモード" position="0  0.05 0.01" align="center" color="#FFD080" width="1.5"></a-text>
-      <a-text value="左G    : 鏝板を補充" position="0 -0.05 0.01" align="center" color="#FFD080" width="1.5"></a-text>
-      <a-text value="鏝板へ : すくう"     position="0 -0.15 0.01" align="center" color="#9F9"    width="1.5"></a-text>
-      <a-text value="壁へ   : 塗る"       position="0 -0.25 0.01" align="center" color="#9F9"    width="1.5"></a-text>
-    </a-entity>
+    <!-- ===== 操作説明パネル (Canvas テクスチャ、日本語対応) ===== -->
+    <a-plane position="0.95 1.65 -0.60" rotation="0 -30 0"
+             width="0.72" height="0.62"
+             material="src: #opsCanvas; transparent: true; shader: flat;"></a-plane>
 
     <!-- 左手 = 鏝板 -->
     <a-entity id="leftHand"
@@ -288,6 +283,58 @@
   </a-scene>
 
   <script>
+    /* ==================== 操作説明パネル (Canvas テクスチャ) ==================== */
+    (function drawOpsPanel() {
+      const c   = document.getElementById('opsCanvas');
+      const c2d = c.getContext('2d');
+      const CW = c.width, CH = c.height;
+
+      // 背景
+      c2d.fillStyle = 'rgba(0,0,0,0.75)';
+      c2d.roundRect(0, 0, CW, CH, 32);
+      c2d.fill();
+
+      // タイトル
+      c2d.font = 'bold 46px sans-serif';
+      c2d.fillStyle = '#ffffff';
+      c2d.textAlign = 'center';
+      c2d.fillText('操作方法', CW/2, 72);
+
+      // 区切り線
+      c2d.strokeStyle = 'rgba(255,255,255,0.25)';
+      c2d.lineWidth = 2;
+      c2d.beginPath(); c2d.moveTo(40, 95); c2d.lineTo(CW-40, 95); c2d.stroke();
+
+      // 操作一覧
+      const items = [
+        { label: 'Ⓐ',         desc: '壁を設置',     color: '#80EFFF' },
+        { label: '右グリップ', desc: '均しモード',   color: '#FFD080' },
+        { label: '左グリップ', desc: '鏝板を補充',   color: '#FFD080' },
+        { label: '鏝板に近づく', desc: 'すくう',     color: '#88FF88' },
+        { label: '壁に近づく', desc: '塗る',         color: '#88FF88' },
+        { label: '左手レーザー', desc: '採点/リセット', color: '#dddddd' },
+      ];
+
+      c2d.textAlign = 'left';
+      items.forEach((item, i) => {
+        const y = 152 + i * 64;
+
+        // ラベル (左)
+        c2d.font = 'bold 34px sans-serif';
+        c2d.fillStyle = item.color;
+        c2d.fillText(item.label, 48, y);
+
+        // 区切り
+        c2d.fillStyle = 'rgba(255,255,255,0.4)';
+        c2d.fillText(':', 248, y);
+
+        // 説明 (右)
+        c2d.font = '34px sans-serif';
+        c2d.fillStyle = '#ffffff';
+        c2d.fillText(item.desc, 272, y);
+      });
+    })();
+
     /* ==================== WebXR ==================== */
     const statusEl   = document.getElementById('status');
     const enterARBtn = document.getElementById('enterAR');
