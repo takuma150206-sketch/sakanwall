@@ -35,8 +35,11 @@
       init: function () {
         this.lastTick    = 0;
         this.covCount    = 0;
-        this.smoothing   = false;    // 右グリップ = 均しモード
-        this.wasContact  = false;    // 壁接触フラグ (ハプティクス用)
+        this.smoothing   = false;
+        this.wasContact  = false;
+        this._lastMid       = null;
+        this._lastHalfBlade = 0;
+        this._lastAngle     = 0;
         this.mouseDown   = false;
 
         this.threeRC     = new THREE.Raycaster();
@@ -134,25 +137,47 @@
             uvHits.push({x:hits[0].uv.x, y:hits[0].uv.y});
         }
 
-        if (uvHits.length<2) {
-          lastCenterUV=null; this.wasContact=false; return;
+        if (uvHits.length < 2) {
+          /* 壁から離れた瞬間 → 終端の弧 */
+          if (this.wasContact && this._lastMid && typeof drawStrokeEdge === 'function') {
+            drawStrokeEdge(this._lastMid, this._lastHalfBlade, this._lastAngle, false);
+            markTextureDirty();
+          }
+          lastCenterUV = null; this.wasContact = false; return;
         }
 
-        /* ==== 壁接触ハプティクス ==== */
+        /* 壁接触ハプティクス */
         if (!this.wasContact) {
-          hapticPulse(0.65, 55); // 接触: 短く強く
-          this.wasContact=true;
+          hapticPulse(0.65, 55);
+
+          /* 始端の弧 */
+          if (uvHits.length >= 2 && typeof drawStrokeEdge === 'function') {
+            const pts2    = uvHits.map(uv => ({ x: uv.x * W, y: (1 - uv.y) * H }));
+            const first2  = pts2[0], last2 = pts2[pts2.length - 1];
+            const midPt2  = pts2[Math.floor(pts2.length / 2)];
+            const dx2 = last2.x - first2.x, dy2 = last2.y - first2.y;
+            const hb2 = Math.sqrt(dx2*dx2 + dy2*dy2) / 2;
+            drawStrokeEdge(midPt2, hb2, Math.atan2(dy2, dx2), true);
+            markTextureDirty();
+          }
+          this.wasContact = true;
         }
 
         if (this.smoothing) {
-          /* 均しモード */
           if (typeof smoothBlade==='function') smoothBlade(uvHits);
-          hapticPulse(0.08, 20); // 均し: 弱い持続
+          hapticPulse(0.08, 20);
         } else {
-          /* 塗りモード */
           if (trowelMortar<=0) { lastCenterUV=null; return; }
+          /* 終端弧のために前フレームの情報を保存 */
+          const ptsT   = uvHits.map(uv => ({ x: uv.x * W, y: (1 - uv.y) * H }));
+          const firstT = ptsT[0], lastT = ptsT[ptsT.length - 1];
+          const dxT = lastT.x - firstT.x, dyT = lastT.y - firstT.y;
+          this._lastMid      = ptsT[Math.floor(ptsT.length / 2)];
+          this._lastHalfBlade = Math.sqrt(dxT*dxT + dyT*dyT) / 2;
+          this._lastAngle    = Math.atan2(dyT, dxT);
+
           if (typeof paintBlade==='function') paintBlade(uvHits);
-          hapticPulse(0.13, 20); // 塗り: 微弱な持続
+          hapticPulse(0.13, 20);
           if (++this.covCount>=10) { this.covCount=0; if (typeof updateCoverage==='function') updateCoverage(); }
         }
       }
@@ -190,7 +215,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v2.5</div>
+  <div id="version">v2.7</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     🅐 壁を設置<br>
@@ -378,63 +403,84 @@
       }
     }
 
-    /* ==================== ハイトマップ ==================== */
+    /* ==================== ハイトマップ (Float32バッファ方式) ====================
+       Uint8(0-255)ではなく float の高さバッファで管理することで
+       何度でも重ね塗り・均しで厚みを変更できる                              */
     const heightCanvas = document.getElementById('heightCanvas');
     const hCtx         = heightCanvas.getContext('2d');
     const HW = heightCanvas.width, HH = heightCanvas.height;
-    // 初期: 真っ黒 (変位=0)
+
+    /* 高さバッファ: 0.0 = 平坦, 積み上げるほど大きくなる */
+    let heightData  = new Float32Array(HW * HH);
+    const H_DISPLAY = 10.0;  // この値を白(最大変位)として表示する基準
+
+    let heightMap = null;
+    let heightImageData = hCtx.createImageData(HW, HH);
+
+    /* heightData → Canvas → displacementMap を更新 */
+    function renderHeightToCanvas() {
+      const d = heightImageData.data;
+      for (let i = 0; i < heightData.length; i++) {
+        const v = Math.min(255, Math.floor(Math.max(0, heightData[i]) / H_DISPLAY * 255));
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+        d[i*4+3] = 255;
+      }
+      hCtx.putImageData(heightImageData, 0, 0);
+      if (heightMap) heightMap.needsUpdate = true;
+    }
+
+    /* 初期化: 真っ黒 */
     hCtx.fillStyle = '#000';
     hCtx.fillRect(0, 0, HW, HH);
 
-    let heightMap = null; // THREE.CanvasTexture (scene loaded 後にセット)
-
-    /* displacementMap を three.js 経由でセット */
     sceneEl.addEventListener('loaded', () => {
-      const wallEl   = document.getElementById('wall');
-      const mesh     = wallEl.getObject3D('mesh');
+      const wallEl = document.getElementById('wall');
+      const mesh   = wallEl.getObject3D('mesh');
       if (!mesh) return;
       heightMap = new THREE.CanvasTexture(heightCanvas);
       mesh.material.displacementMap   = heightMap;
-      mesh.material.displacementScale = 0.04;  // 最大 40mm の凸凹 (わかりやすく強め)
+      mesh.material.displacementScale = 0.04;
       mesh.material.displacementBias  = 0;
       mesh.material.needsUpdate       = true;
     });
 
-    function markHeightDirty() {
-      if (heightMap) heightMap.needsUpdate = true;
-    }
+    function markHeightDirty() { /* 廃止: renderHeightToCanvas で一括更新 */ }
 
-    /* 塗り: ハイトマップに strokeFactor に応じた高さを追加 */
+    /* 塗り: Float32バッファに高さを加算 (strokeFactor で量を変える) */
     function paintHeight(uvHits, strokeFactor = 1.0) {
       const r = Math.round(HW * 0.084 / 1.2 * 0.6);
-      const opacity = (0.55 * strokeFactor).toFixed(2);
-      const opacity2 = (0.28 * strokeFactor).toFixed(2);
       for (const uv of uvHits) {
-        const cx = uv.x * HW, cy = (1-uv.y) * HH;
-        const g = hCtx.createRadialGradient(cx,cy,0,cx,cy,r);
-        g.addColorStop(0,   `rgba(255,255,255,${opacity})`);
-        g.addColorStop(0.6, `rgba(255,255,255,${opacity2})`);
-        g.addColorStop(1,   'rgba(255,255,255,0)');
-        hCtx.fillStyle = g;
-        hCtx.beginPath(); hCtx.arc(cx,cy,r,0,Math.PI*2); hCtx.fill();
+        const cx = Math.floor(uv.x * HW);
+        const cy = Math.floor((1 - uv.y) * HH);
+        for (let y = Math.max(0, cy-r); y < Math.min(HH, cy+r+1); y++) {
+          for (let x = Math.max(0, cx-r); x < Math.min(HW, cx+r+1); x++) {
+            const dist = Math.sqrt((x-cx)**2 + (y-cy)**2);
+            if (dist > r) continue;
+            const falloff = 1 - dist / r;
+            heightData[y * HW + x] += falloff * strokeFactor * 0.85;
+          }
+        }
       }
-      markHeightDirty();
+      renderHeightToCanvas();
     }
 
-    /* 均し: ハイトマップに暗色を重ねて平滑化 */
+    /* 均し: 高さを削り取る */
     function smoothHeight(uvHits) {
       const r = Math.round(HW * 0.084 / 1.2 * 0.8);
       for (const uv of uvHits) {
-        const cx = uv.x * HW, cy = (1-uv.y) * HH;
-        // 黒を薄く重ねる → 盛り上がりを削る
-        const g = hCtx.createRadialGradient(cx,cy,0,cx,cy,r);
-        g.addColorStop(0,   'rgba(0,0,0,0.18)');
-        g.addColorStop(0.6, 'rgba(0,0,0,0.08)');
-        g.addColorStop(1,   'rgba(0,0,0,0)');
-        hCtx.fillStyle = g;
-        hCtx.beginPath(); hCtx.arc(cx,cy,r,0,Math.PI*2); hCtx.fill();
+        const cx = Math.floor(uv.x * HW);
+        const cy = Math.floor((1 - uv.y) * HH);
+        for (let y = Math.max(0, cy-r); y < Math.min(HH, cy+r+1); y++) {
+          for (let x = Math.max(0, cx-r); x < Math.min(HW, cx+r+1); x++) {
+            const dist = Math.sqrt((x-cx)**2 + (y-cy)**2);
+            if (dist > r) continue;
+            const falloff = 1 - dist / r;
+            const idx = y * HW + x;
+            heightData[idx] = Math.max(0, heightData[idx] - falloff * 0.35);
+          }
+        }
       }
-      markHeightDirty();
+      renderHeightToCanvas();
     }
 
     /* ==================== 壁カラーテクスチャ ==================== */
@@ -462,12 +508,13 @@
     drawBaseTexture();
 
     function resetWallCanvas() {
-      thicknessMap=new Uint8Array(W*H);
+      thicknessMap = new Uint8Array(W*H);
       drawBaseTexture();
-      // ハイトマップもリセット
-      hCtx.fillStyle='#000'; hCtx.fillRect(0,0,HW,HH);
-      lastCenterUV=null;
-      markTextureDirty(); markHeightDirty();
+      heightData = new Float32Array(HW * HH);
+      hCtx.fillStyle = '#000'; hCtx.fillRect(0, 0, HW, HH);
+      if (heightMap) heightMap.needsUpdate = true;
+      lastCenterUV = null;
+      markTextureDirty();
       updateCoverage();
     }
 
@@ -513,9 +560,7 @@
     function drawKoteNami(mid, halfBlade, bladeAngle, strokeW, intensity, type) {
       const isPaint  = type === 'paint';
       const spacing  = isPaint ? 7  : 15;
-      const waveAmp  = isPaint ? 2.8 : 1.2;
-      const waveFreq = isPaint ? 0.06 : 0.03;
-      const lineW    = isPaint ? 1.4 : 0.9;
+      const waveFreq = isPaint ? 0.055 : 0.03;
       const numLines = Math.ceil((strokeW * 2) / spacing) + 1;
       const bladeLen = halfBlade * 2;
       const STEPS    = Math.max(20, Math.ceil(bladeLen / 5));
@@ -524,64 +569,95 @@
       ctx.translate(mid.x, mid.y);
       ctx.rotate(bladeAngle);
 
-      /* ---- 長辺からの波 (移動方向に垂直) ---- */
+      /* ---- 長辺からの波 (振幅・太さが中央で大きく端で小さい) ---- */
       for (let i = -Math.floor(numLines/2); i <= Math.floor(numLines/2); i++) {
-        const yOff    = i * spacing;
-        const falloff = 1 - Math.abs(yOff) / (strokeW * 1.15);
-        if (falloff <= 0) continue;
+        const yOff      = i * spacing;
+        const edgeFall  = 1 - Math.abs(yOff) / (strokeW * 1.1);
+        if (edgeFall <= 0) continue;
 
-        const baseAlpha = (isPaint ? 0.32 : 0.16) * falloff * Math.min(1, intensity);
-        const isDark = (i % 2 === 0);
-        const r = isDark ? 55  : 175;
-        const g = isDark ? 52  : 170;
-        const b = isDark ? 46  : 162;
+        /* ★ 中央に向かって振幅が増すコサイン包絡線 */
+        const ampScale  = Math.pow(Math.cos(Math.abs(yOff) / strokeW * Math.PI * 0.5), 0.6);
+        const waveAmp   = (isPaint ? 4.2 : 1.8) * ampScale;
 
-        ctx.strokeStyle = `rgba(${r},${g},${b},${baseAlpha.toFixed(3)})`;
+        /* ★ 線の太さも中央で太く */
+        const lineW     = isPaint ? (0.7 + 1.6 * ampScale) : (0.5 + 0.9 * ampScale);
+
+        const alpha     = (isPaint ? 0.40 : 0.18) * edgeFall * Math.min(1, intensity);
+        const isDark    = (i % 2 === 0);
+        const r = isDark ? 52  : 178;
+        const g = isDark ? 49  : 172;
+        const b = isDark ? 43  : 164;
+
+        ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
         ctx.lineWidth   = lineW;
         ctx.beginPath();
         for (let s = 0; s <= STEPS; s++) {
           const x    = -halfBlade + s * (bladeLen / STEPS);
           const wave = Math.sin(x * waveFreq + i * 1.1) * waveAmp
-                     + Math.sin(x * waveFreq * 2.3 + i * 0.7) * waveAmp * 0.35;
+                     + Math.sin(x * waveFreq * 2.4 + i * 0.7) * waveAmp * 0.28;
           if (s === 0) ctx.moveTo(x, yOff + wave);
           else         ctx.lineTo(x, yOff + wave);
         }
         ctx.stroke();
       }
 
-      /* ---- 先端からの波 (移動方向に平行) ----
-         鏝を引くと先端が材料を押し・引きずって
-         刃軸方向に走る筋もできる                */
+      /* ---- 先端からの波 (移動方向に平行) ---- */
       const tipSpacing  = isPaint ? 13 : 24;
-      const tipWaveAmp  = isPaint ? 2.0 : 0.9;
       const tipWaveFreq = isPaint ? 0.09 : 0.04;
-      const tipLineW    = isPaint ? 1.1 : 0.7;
       const numTipLines = Math.ceil((halfBlade * 2) / tipSpacing) + 1;
       const TIP_STEPS   = Math.max(12, Math.ceil(strokeW * 2 / 4));
 
       for (let j = -Math.floor(numTipLines/2); j <= Math.floor(numTipLines/2); j++) {
-        const yPos    = j * tipSpacing;          // 刃軸上の位置
-        const falloff = 1 - Math.abs(yPos) / (halfBlade * 1.1);
+        const yPos      = j * tipSpacing;
+        const falloff   = 1 - Math.abs(yPos) / (halfBlade * 1.1);
         if (falloff <= 0) continue;
 
-        const baseAlpha = (isPaint ? 0.20 : 0.09) * falloff * Math.min(1, intensity);
-        const isDark = (j % 2 !== 0);
-        const r = isDark ? 50  : 168;
-        const g = isDark ? 48  : 163;
-        const b = isDark ? 42  : 155;
+        /* 先端も中央の刃幅付近で振幅が大きい */
+        const ampScale2 = Math.pow(Math.cos(Math.abs(yPos) / halfBlade * Math.PI * 0.48), 0.5);
+        const tipAmp    = (isPaint ? 2.2 : 1.0) * ampScale2;
+        const tipLineW  = isPaint ? (0.7 + 0.7 * ampScale2) : (0.5 + 0.4 * ampScale2);
 
-        ctx.strokeStyle = `rgba(${r},${g},${b},${baseAlpha.toFixed(3)})`;
+        const alpha     = (isPaint ? 0.22 : 0.10) * falloff * Math.min(1, intensity);
+        const isDark    = (j % 2 !== 0);
+        const r = isDark ? 48  : 165;
+        const g = isDark ? 46  : 160;
+        const b = isDark ? 40  : 152;
+
+        ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
         ctx.lineWidth   = tipLineW;
         ctx.beginPath();
         for (let s = 0; s <= TIP_STEPS; s++) {
           const x    = -strokeW + s * (strokeW * 2 / TIP_STEPS);
-          const wave = Math.sin(x * tipWaveFreq + j * 0.9) * tipWaveAmp
-                     + Math.sin(x * tipWaveFreq * 1.8 + j * 1.3) * tipWaveAmp * 0.4;
+          const wave = Math.sin(x * tipWaveFreq + j * 0.9) * tipAmp
+                     + Math.sin(x * tipWaveFreq * 1.8 + j * 1.3) * tipAmp * 0.38;
           if (s === 0) ctx.moveTo(x, yPos + wave);
           else         ctx.lineTo(x, yPos + wave);
         }
         ctx.stroke();
       }
+
+      ctx.restore();
+    }
+
+    /* ---- 始端・終端の弧状跡 ----
+       鏝が壁に当たった瞬間と離れた瞬間に
+       刃全長にまたがる弧を描く              */
+    function drawStrokeEdge(mid, halfBlade, bladeAngle, isEntry) {
+      ctx.save();
+      ctx.translate(mid.x, mid.y);
+      ctx.rotate(bladeAngle);
+
+      /* isEntry: 鏝が入るとき → 進行方向側に弓なりに凸
+         !isEntry: 鏝が出るとき → 反対方向に凸           */
+      const bulge = (isEntry ? -1 : 1) * (7 + Math.random() * 5);
+
+      ctx.strokeStyle = `rgba(52, 49, 43, 0.32)`;
+      ctx.lineWidth   = 1.6;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-halfBlade * 0.88, 0);
+      ctx.quadraticCurveTo(0, bulge, halfBlade * 0.88, 0);
+      ctx.stroke();
 
       ctx.restore();
     }
