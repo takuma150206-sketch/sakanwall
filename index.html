@@ -173,9 +173,10 @@
       this.mouseDown      = false;
 
       /* コテ返し用 */
-      this.hawkEntryQuat  = null;   // 鏝板に入った瞬間のクォータニオン
-      this.koteGaeshiDone = false;  // コテ返し完了フラグ
-      this._lastPos       = new THREE.Vector3(); // 速度計算用
+      this.hawkEntryQuat  = null;
+      this.hawkMaxAngle   = 0;
+      this.koteGaeshiDone = false;
+      this._lastPos       = new THREE.Vector3();
       this.currentSpeed   = 0;
 
       this.threeRC     = new THREE.Raycaster();
@@ -258,27 +259,37 @@
         const dist=this._bladeCenter.distanceTo(this._hawkPos);
 
         if(dist<SCOOP_DIST) {
-          /* 鏝板ゾーン内: クォータニオンの変化でひねりを検出 */
-          if(!this.hawkEntryQuat) {
-            this.hawkEntryQuat=obj.quaternion.clone();
-            if(typeof setMessage==='function') setMessage('手首をひねってコテ返し！');
-          }
-          const twist=obj.quaternion.angleTo(this.hawkEntryQuat);
-          if(twist > Math.PI*0.5 && !this.koteGaeshiDone && hawkMortar>0) {
-            /* コテ返し成功! */
-            const amt=Math.min(KOTE_AMOUNT, hawkMortar);
-            hawkMortar=Math.max(0,hawkMortar-amt);
-            trowelMortar=Math.min(TROWEL_MAX,trowelMortar+amt);
-            this.koteGaeshiDone=true;
-            this.hawkEntryQuat=null; // リセット (次のコテ返し用)
-            if(typeof updateMortarVisuals==='function') updateMortarVisuals();
-            if(typeof setMessage==='function') setMessage('コテ返し ✓ 材料を乗せました');
-            hapticPulse(0.55,150);
-            if(typeof sound!=='undefined') sound.playKoteGaeshi();
+          /* 鏝板ゾーン内 */
+          if(!this.koteGaeshiDone) {
+            /* ★ コテ返し済みでない時だけ基準クォータニオンをキャプチャ */
+            if(!this.hawkEntryQuat) {
+              this.hawkEntryQuat  = obj.quaternion.clone();
+              this.hawkMaxAngle   = 0;
+              if(hawkMortar>0) setMessage('手首をひねってコテ返し！');
+            }
+
+            /* ★ 最大到達角を記録(返してから戻しても検出できる) */
+            const twist = obj.quaternion.angleTo(this.hawkEntryQuat);
+            this.hawkMaxAngle = Math.max(this.hawkMaxAngle || 0, twist);
+
+            /* 閾値 40°(π×0.22) ── 少し傾けるだけで成功 */
+            if(this.hawkMaxAngle > Math.PI * 0.22 && hawkMortar > 0) {
+              const amt = Math.min(KOTE_AMOUNT, hawkMortar);
+              hawkMortar   = Math.max(0, hawkMortar   - amt);
+              trowelMortar = Math.min(TROWEL_MAX, trowelMortar + amt);
+              this.koteGaeshiDone = true;
+              this.hawkEntryQuat  = null;
+              this.hawkMaxAngle   = 0;
+              if(typeof updateMortarVisuals==='function') updateMortarVisuals();
+              setMessage('コテ返し ✓ 材料を乗せました');
+              hapticPulse(0.55, 150);
+              if(typeof sound!=='undefined') sound.playKoteGaeshi();
+            }
           }
         } else {
-          /* 鏝板ゾーン外 */
-          this.hawkEntryQuat=null;
+          /* 鏝板ゾーン外 → 基準をリセット */
+          this.hawkEntryQuat = null;
+          this.hawkMaxAngle  = 0;
         }
       }
 
@@ -396,7 +407,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v3.2</div>
+  <div id="version">v3.3</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に鏝を近づけ<strong>手首をひねる</strong> → コテ返し<br>
