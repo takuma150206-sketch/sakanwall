@@ -397,7 +397,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.0</div>
+  <div id="version">v4.1</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に近づき手首をひねる → コテ返し<br>
@@ -416,8 +416,17 @@
     <a-assets>
       <canvas id="wallCanvas"   width="512" height="512"></canvas>
       <canvas id="heightCanvas" width="128" height="128"></canvas>
+      <canvas id="heatCanvas"   width="128" height="128"></canvas>
       <canvas id="opsCanvas"    width="512" height="512"></canvas>
     </a-assets>
+
+    <!-- 塗り厚ヒートマップ オーバーレイ (壁と同じ位置・サイズ) -->
+    <a-entity id="heatOverlay"
+      geometry="primitive:plane; width:1.2; height:1.0; segmentsWidth:1; segmentsHeight:1"
+      material="src:#heatCanvas; shader:flat; transparent:true; opacity:0.0;"
+      position="0 1.3 -0.698"
+      visible="false">
+    </a-entity>
 
     <!-- 空間スキャナ -->
     <a-entity room-scanner></a-entity>
@@ -448,6 +457,12 @@
       <a-text value="採点"   position="0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
     </a-entity>
 
+    <!-- ヒートマップトグル -->
+    <a-entity position="-0.95 1.22 -0.55" rotation="0 35 0">
+      <a-box id="heatBtn" width="0.58" height="0.12" depth="0.04" color="#555"></a-box>
+      <a-text id="heatBtnLabel" value="厚みマップ: OFF" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
+    </a-entity>
+
     <!-- 操作説明パネル -->
     <a-plane position="0.95 1.70 -0.60" rotation="0 -30 0"
              width="0.72" height="0.65"
@@ -470,7 +485,7 @@
     <!-- 左手 = 鏝板 (haptic無効) -->
     <a-entity id="leftHand"
               laser-controls="hand:left"
-              raycaster="objects:#resetBtn,#gradeBtn; far:3; lineColor:#fff; lineOpacity:0.4"
+              raycaster="objects:#resetBtn,#gradeBtn,#heatBtn; far:3; lineColor:#fff; lineOpacity:0.4"
               tracked-controls="autoHide:false">
       <!-- laser-controls の内部 haptic を上書き無効化 -->
       <a-entity laser-controls-haptic-override></a-entity>
@@ -641,6 +656,82 @@
       }
     } catch(e) {}
   }
+
+  /* ==================== 塗り厚ヒートマップ ====================
+     heightData の値を色にマッピングして壁オーバーレイに表示
+     青=薄すぎ / 緑=適正 / 黄=やや厚 / 赤=厚すぎ             */
+  const heatCanvas = document.getElementById('heatCanvas');
+  const heatCtx    = heatCanvas.getContext('2d');
+  const HM_W = heatCanvas.width, HM_H = heatCanvas.height;
+  let heatTex = null;
+  let heatVisible = false;
+
+  // 適正厚みの範囲 (heightData の値ベース)
+  const HEAT_MIN_OK  = 1.5;   // これ以下 = 薄すぎ(青)
+  const HEAT_MAX_OK  = 5.0;   // これ以下 = 適正(緑)
+  const HEAT_TOO_FAT = 9.0;   // これ以上 = 厚すぎ(赤)
+
+  sceneEl.addEventListener('loaded', () => {
+    heatTex = new THREE.CanvasTexture(heatCanvas);
+    const overlay = document.getElementById('heatOverlay');
+    if (overlay) {
+      const mesh = overlay.getObject3D('mesh');
+      if (mesh) { mesh.material.map = heatTex; mesh.material.needsUpdate = true; }
+    }
+  });
+
+  function updateHeatmap(p) {
+    if (!heatVisible) return;
+    const imgData = heatCtx.createImageData(HM_W, HM_H);
+    const d = imgData.data;
+    /* heightData は painter のサイズ (p.HW × p.HH) なので
+       HM_W × HM_H にリサンプリング */
+    for (let y = 0; y < HM_H; y++) {
+      for (let x = 0; x < HM_W; x++) {
+        const px = Math.floor(x / HM_W * p.HW);
+        const py = Math.floor(y / HM_H * p.HH);
+        const h  = p.heightData[py * p.HW + px];
+        let r=0, g=0, b=0, a=0;
+        if (h < 0.1) {
+          // 未塗り: 透明
+          a = 0;
+        } else if (h < HEAT_MIN_OK) {
+          // 薄すぎ: 青
+          const t = h / HEAT_MIN_OK;
+          r=20; g=80+Math.floor(60*t); b=220; a=Math.floor(180*t+40);
+        } else if (h <= HEAT_MAX_OK) {
+          // 適正: 緑
+          const t = (h-HEAT_MIN_OK)/(HEAT_MAX_OK-HEAT_MIN_OK);
+          r=20+Math.floor(40*t); g=200; b=40; a=160;
+        } else if (h <= HEAT_TOO_FAT) {
+          // やや厚: 黄→オレンジ
+          const t = (h-HEAT_MAX_OK)/(HEAT_TOO_FAT-HEAT_MAX_OK);
+          r=220+Math.floor(35*t); g=Math.floor(200*(1-t*0.5)); b=10; a=170;
+        } else {
+          // 厚すぎ: 赤
+          r=255; g=20; b=10; a=200;
+        }
+        const i = (y*HM_W+x)*4;
+        d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=a;
+      }
+    }
+    heatCtx.putImageData(imgData, 0, 0);
+    if (heatTex) heatTex.needsUpdate = true;
+  }
+
+  /* ヒートマップトグル */
+  document.getElementById('heatBtn').addEventListener('click', () => {
+    heatVisible = !heatVisible;
+    const overlay = document.getElementById('heatOverlay');
+    const label   = document.getElementById('heatBtnLabel');
+    if (overlay) {
+      overlay.setAttribute('visible', heatVisible);
+      overlay.setAttribute('material', `src:#heatCanvas; shader:flat; transparent:true; opacity:${heatVisible?0.82:0}`);
+    }
+    if (label) label.setAttribute('value', `厚みマップ: ${heatVisible?'ON':'OFF'}`);
+    document.getElementById('heatBtn').setAttribute('color', heatVisible?'#28a':'#555');
+    if (heatVisible) updateHeatmap(staticPainter);
+  });
 
   /* ==================== モルタルシステム ==================== */
   let hawkMortar   = 100;
@@ -894,6 +985,7 @@
 
     /* ハイトマップ */
     _paintHeight(p, uvHits, strokeFactor);
+    if(typeof updateHeatmap==='function') updateHeatmap(p);
 
     trowelMortar=Math.max(0,trowelMortar-PAINT_COST);
     if(trowelMortar===0) setMessage('泥がなくなりました。鏝板からすくってください');
@@ -912,23 +1004,23 @@
     const halfBlade=bladeLen/2;
     const strokeW=40;
 
-    /* 均し: より濃いグレーで上塗り */
+    /* 均し: 暗いグレーで上塗り */
     for(const pt of pts){
       const g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,strokeW);
-      g.addColorStop(0,   'rgba(145,146,142,0.65)');
-      g.addColorStop(0.5, 'rgba(138,139,136,0.45)');
-      g.addColorStop(1,   'rgba(135,136,133,0)');
+      g.addColorStop(0,   'rgba(100,101,98,0.72)');
+      g.addColorStop(0.5, 'rgba(95,96,93,0.50)');
+      g.addColorStop(1,   'rgba(90,91,88,0)');
       ctx.fillStyle=g; ctx.beginPath(); ctx.arc(pt.x,pt.y,strokeW,0,Math.PI*2); ctx.fill();
     }
 
     /* 均し面の光沢帯 */
     ctx.save(); ctx.translate(mid.x,mid.y); ctx.rotate(bladeAngle);
     const shine=ctx.createLinearGradient(-halfBlade*0.8,0,halfBlade*0.8,0);
-    shine.addColorStop(0,   'rgba(175,176,172,0)');
-    shine.addColorStop(0.25,'rgba(175,176,172,0.20)');
-    shine.addColorStop(0.5, 'rgba(180,181,177,0.28)');
-    shine.addColorStop(0.75,'rgba(175,176,172,0.20)');
-    shine.addColorStop(1,   'rgba(175,176,172,0)');
+    shine.addColorStop(0,   'rgba(130,131,128,0)');
+    shine.addColorStop(0.25,'rgba(130,131,128,0.18)');
+    shine.addColorStop(0.5, 'rgba(135,136,133,0.25)');
+    shine.addColorStop(0.75,'rgba(130,131,128,0.18)');
+    shine.addColorStop(1,   'rgba(130,131,128,0)');
     ctx.fillStyle=shine;
     ctx.beginPath(); ctx.ellipse(0,0,halfBlade*0.8,strokeW*0.22,0,0,Math.PI*2); ctx.fill();
 
@@ -937,7 +1029,7 @@
       const mx=(Math.random()-0.5)*halfBlade*1.8;
       const my=(Math.random()-0.5)*strokeW*1.6;
       const mr=12+Math.random()*22;
-      const mv=Math.floor(130+Math.random()*25);
+      const mv=Math.floor(90+Math.random()*20);
       ctx.fillStyle=`rgba(${mv},${mv},${mv-2},${(0.06+Math.random()*0.10).toFixed(2)})`;
       ctx.beginPath(); ctx.ellipse(mx,my,mr,mr*0.45,Math.random()*Math.PI,0,Math.PI*2); ctx.fill();
     }
@@ -947,6 +1039,7 @@
     drawKoteNami(ctx, mid, halfBlade, bladeAngle, strokeW, 0.5, 'smooth');
     p.colorTex.needsUpdate=true;
     _smoothHeight(p, uvHits);
+    if(typeof updateHeatmap==='function') updateHeatmap(p);
   }
 
   function _paintHeight(p, uvHits, strokeFactor=1) {
