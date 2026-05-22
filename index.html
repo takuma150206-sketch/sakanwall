@@ -397,7 +397,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.3</div>
+  <div id="version">v4.4</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に近づき手首をひねる → コテ返し<br>
@@ -417,10 +417,18 @@
       <canvas id="wallCanvas"   width="512" height="512"></canvas>
       <canvas id="heightCanvas" width="128" height="128"></canvas>
       <canvas id="heatCanvas"   width="256" height="256"></canvas>
+      <canvas id="chartCanvas"  width="512" height="320"></canvas>
       <canvas id="opsCanvas"    width="512" height="512"></canvas>
     </a-assets>
 
-    <!-- 塗り厚マップパネル (壁から独立・右手側に浮かぶ) -->
+    <!-- 常時表示 塗り厚チャート (左手側・HUDの下) -->
+    <a-plane id="chartPanel"
+             width="0.85" height="0.53"
+             position="-0.95 1.12 -0.55"
+             rotation="0 35 0"
+             material="src:#chartCanvas; shader:flat; transparent:true;"></a-plane>
+
+    <!-- 塗り厚マップパネル (トグル) -->
     <a-entity id="heatPanel" visible="false" position="0.95 1.25 -0.60" rotation="0 -30 0">
       <!-- パネル背景 -->
       <a-plane width="0.80" height="0.92" color="#111" opacity="0.90"></a-plane>
@@ -687,7 +695,145 @@
     } catch(e) {}
   }
 
-  /* ==================== 塗り厚ヒートマップ ====================
+  /* ==================== 常時表示 塗り厚チャート ==================== */
+  const chartCanvas = document.getElementById('chartCanvas');
+  const cctx        = chartCanvas.getContext('2d');
+  const CW = chartCanvas.width, CH = chartCanvas.height;
+  let chartTex = null;
+
+  sceneEl.addEventListener('loaded', () => {
+    chartTex = new THREE.CanvasTexture(chartCanvas);
+    const panel = document.getElementById('chartPanel');
+    if (panel) {
+      const mesh = panel.getObject3D('mesh');
+      if (mesh) { mesh.material.map = chartTex; mesh.material.needsUpdate = true; }
+    }
+    drawChart(null); // 初期描画
+  });
+
+  function drawChart(p) {
+    cctx.clearRect(0, 0, CW, CH);
+
+    /* 背景 */
+    cctx.fillStyle = 'rgba(10,10,10,0.82)';
+    roundRect2d(cctx, 0, 0, CW, CH, 18);
+    cctx.fill();
+
+    /* タイトル */
+    cctx.font = 'bold 26px sans-serif';
+    cctx.fillStyle = '#fff';
+    cctx.textAlign = 'center';
+    cctx.fillText('塗り厚 分布', CW/2, 32);
+
+    /* 統計計算 */
+    let cntUnpainted=0, cntThin=0, cntOk=0, cntYellow=0, cntThick=0;
+    let sumH=0, maxH=0, total=1;
+
+    if (p) {
+      total = p.HW * p.HH;
+      for (let i = 0; i < total; i++) {
+        const h = p.heightData[i];
+        if      (h < 0.08)         cntUnpainted++;
+        else if (h < HEAT_MIN_OK)  cntThin++;
+        else if (h <= HEAT_MAX_OK) cntOk++;
+        else if (h <= HEAT_TOO_FAT) cntYellow++;
+        else                       cntThick++;
+        sumH += h; if (h > maxH) maxH = h;
+      }
+    } else {
+      cntUnpainted = 1; total = 1;
+    }
+
+    const painted  = total - cntUnpainted;
+    const avgH     = painted > 0 ? sumH / painted : 0;
+    const okRatio  = painted > 0 ? cntOk / painted : 0;
+    const covRatio = painted / total;
+    const score    = Math.round(covRatio * okRatio * 100);
+    const scoreLabel = score>=80?'◎ 優秀':score>=60?'○ 良好':score>=40?'△ 要改善':'✕ 要やり直し';
+
+    /* ---- 積み上げ横棒グラフ ---- */
+    const BAR_X = 24, BAR_Y = 50, BAR_W = CW - 48, BAR_H = 52;
+    const zones = [
+      { cnt: cntUnpainted, color: '#888888', label: '未塗り' },
+      { cnt: cntThin,      color: '#3366ff', label: '薄すぎ' },
+      { cnt: cntOk,        color: '#22cc44', label: '適正'   },
+      { cnt: cntYellow,    color: '#ffaa00', label: '厚め'   },
+      { cnt: cntThick,     color: '#ff2222', label: '厚すぎ' },
+    ];
+
+    let offsetX = BAR_X;
+    for (const z of zones) {
+      const w = Math.max(0, (z.cnt / total) * BAR_W);
+      cctx.fillStyle = z.color;
+      cctx.fillRect(offsetX, BAR_Y, w, BAR_H);
+      offsetX += w;
+    }
+    /* バー枠 */
+    cctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    cctx.lineWidth = 1.5;
+    cctx.strokeRect(BAR_X, BAR_Y, BAR_W, BAR_H);
+    /* 適正ゾーンのターゲットライン */
+    cctx.strokeStyle = '#22cc44';
+    cctx.lineWidth = 2;
+    cctx.setLineDash([4,3]);
+    cctx.beginPath(); cctx.moveTo(BAR_X, BAR_Y+BAR_H+8); cctx.lineTo(BAR_X+BAR_W, BAR_Y+BAR_H+8);
+    cctx.stroke(); cctx.setLineDash([]);
+
+    /* ---- 凡例 ---- */
+    cctx.font = '20px sans-serif';
+    cctx.textAlign = 'left';
+    const LEG_Y = BAR_Y + BAR_H + 26;
+    let lx = BAR_X;
+    for (const z of zones) {
+      const pct = (z.cnt / total * 100).toFixed(1);
+      cctx.fillStyle = z.color;
+      cctx.fillRect(lx, LEG_Y, 14, 14);
+      cctx.fillStyle = '#ddd';
+      cctx.fillText(`${z.label} ${pct}%`, lx + 18, LEG_Y + 13);
+      lx += 92;
+    }
+
+    /* ---- 数値テーブル ---- */
+    const TBL_Y = LEG_Y + 34;
+    cctx.font = '20px sans-serif';
+    const cols = [
+      { label: '塗布率',   val: `${(covRatio*100).toFixed(1)}%`,   color: '#9F9' },
+      { label: '適正率',   val: `${(okRatio*100).toFixed(1)}%`,    color: '#9F9' },
+      { label: '平均厚み', val: avgH.toFixed(2),                   color: '#FFD080' },
+      { label: '最大厚み', val: maxH.toFixed(2),                   color: '#FFD080' },
+    ];
+    let cx2 = BAR_X;
+    for (const c of cols) {
+      cctx.fillStyle = 'rgba(255,255,255,0.08)';
+      cctx.fillRect(cx2, TBL_Y, 110, 46);
+      cctx.fillStyle = '#aaa';
+      cctx.font = '16px sans-serif';
+      cctx.fillText(c.label, cx2+8, TBL_Y+16);
+      cctx.fillStyle = c.color;
+      cctx.font = 'bold 22px sans-serif';
+      cctx.fillText(c.val, cx2+8, TBL_Y+40);
+      cx2 += 116;
+    }
+
+    /* ---- 総合スコア ---- */
+    const scoreColor = score>=80?'#44ff44':score>=60?'#ffee00':score>=40?'#ff8800':'#ff3333';
+    cctx.fillStyle = scoreColor;
+    cctx.font = 'bold 24px sans-serif';
+    cctx.textAlign = 'right';
+    cctx.fillText(`${scoreLabel}  ${score}点`, CW-20, TBL_Y+40);
+
+    if (chartTex) chartTex.needsUpdate = true;
+  }
+
+  function roundRect2d(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+    ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+    ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+    ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
+    ctx.closePath();
+  }
      壁とは独立した専用パネルに表示
      青=薄すぎ / 緑=適正 / 黄=やや厚 / 赤=厚すぎ / 白=未塗  */
   const heatCanvas = document.getElementById('heatCanvas');
@@ -1049,6 +1195,7 @@
     /* ハイトマップ */
     _paintHeight(p, uvHits, strokeFactor);
     if(heatVisible && typeof updateHeatmap==='function') updateHeatmap(p);
+    if(typeof drawChart==='function') drawChart(p);
 
     trowelMortar=Math.max(0,trowelMortar-PAINT_COST);
     if(trowelMortar===0) setMessage('泥がなくなりました。鏝板からすくってください');
@@ -1103,6 +1250,7 @@
     p.colorTex.needsUpdate=true;
     _smoothHeight(p, uvHits);
     if(heatVisible && typeof updateHeatmap==='function') updateHeatmap(p);
+    if(typeof drawChart==='function') drawChart(p);
   }
 
   function _paintHeight(p, uvHits, strokeFactor=1) {
