@@ -113,7 +113,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v4.7</div>
+  <div id="ver">v4.8</div>
   <div id="ui"><strong>左官MR練習</strong><br>Ⓐ 壁設置 / 左G 補充<br>鏝板+ひねり→コテ返し<br>材料あり→塗 / なし→均</div>
   <button id="btn" disabled>確認中...</button>
   <div id="st">確認中...</div>
@@ -130,13 +130,13 @@
     <!-- 塗り壁 -->
     <a-entity id="wall"
       geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:24;segmentsHeight:24"
-      material="src:#wCvs;shader:standard;roughness:0.95;metalness:0;"
+      material="shader:standard;roughness:0.95;metalness:0;color:#B8B4AE;"
       position="0 1.3 -0.7"></a-entity>
 
     <!-- 塗り厚マップ壁 (右隣) -->
     <a-entity id="heatWall"
       geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:1;segmentsHeight:1"
-      material="src:#hCvs;shader:flat;"
+      material="shader:flat;color:#B0AEA8;"
       position="1.5 1.3 -0.7"></a-entity>
     <a-text value="塗り厚マップ" position="1.5 1.88 -0.7" align="center" color="#fff" width="1.8"></a-text>
 
@@ -273,17 +273,26 @@
   }
 
   sc.addEventListener('loaded',()=>{
+    /* 1. まずキャンバスに描画 */
+    drawBase();
+    hCtx2.fillStyle='#B4B0AA'; hCtx2.fillRect(0,0,HW,HH);
+
+    /* 2. Three.js メッシュに直接テクスチャをセット */
     const wm=document.getElementById('wall').getObject3D('mesh');
     if(wm){
-      colorTex=new THREE.CanvasTexture(wCvs);wm.material.map=colorTex;
+      colorTex=new THREE.CanvasTexture(wCvs);
+      wm.material.map=colorTex;
       heightTex=new THREE.CanvasTexture(htCvs);
-      wm.material.displacementMap=heightTex;wm.material.displacementScale=0.014;
+      wm.material.displacementMap=heightTex;
+      wm.material.displacementScale=0.014;
       wm.material.needsUpdate=true;
     }
     const hm=document.getElementById('heatWall').getObject3D('mesh');
-    if(hm){heatTex=new THREE.CanvasTexture(hCvs);hm.material.map=heatTex;hm.material.needsUpdate=true;}
-    drawBase();
-    hCtx2.fillStyle='#B4B0AA';hCtx2.fillRect(0,0,HW,HH);
+    if(hm){
+      heatTex=new THREE.CanvasTexture(hCvs);
+      hm.material.map=heatTex;
+      hm.material.needsUpdate=true;
+    }
   });
 
   /* 塗り厚マップ更新 (32×32 = 1024ピクセルのみ) */
