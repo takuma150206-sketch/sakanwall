@@ -397,7 +397,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v3.6</div>
+  <div id="version">v3.7</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に近づき手首をひねる → コテ返し<br>
@@ -516,12 +516,26 @@
   }
 
   function _fillBase(ctx, W, H) {
-    ctx.fillStyle='#C8C2B8'; ctx.fillRect(0,0,W,H);
-    for(let i=0;i<Math.floor(W*H*0.004);i++){
-      const x=Math.random()*W, y=Math.random()*H;
-      const v=Math.floor(180+Math.random()*40);
-      ctx.fillStyle=`rgba(${v},${v-2},${v-5},${0.15+Math.random()*0.25})`;
-      ctx.beginPath(); ctx.arc(x,y,Math.random()*1.8+0.3,0,Math.PI*2); ctx.fill();
+    /* 下地: 荒いコンクリート (塗る前の状態) */
+    ctx.fillStyle = '#B8B4AE'; ctx.fillRect(0, 0, W, H);
+
+    /* 大きめの粒感 (骨材・砂) */
+    for (let i = 0; i < Math.floor(W*H*0.006); i++) {
+      const x = Math.random()*W, y = Math.random()*H;
+      const r = Math.random()*3.5 + 0.5;
+      const v = Math.floor(140 + Math.random()*60);
+      ctx.fillStyle = `rgba(${v},${v-3},${v-6},${0.2+Math.random()*0.35})`;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+    }
+
+    /* 荒い表面の凹凸感 (影) */
+    for (let i = 0; i < 80; i++) {
+      const x = Math.random()*W, y = Math.random()*H;
+      const rw = 8 + Math.random()*30, rh = 2 + Math.random()*8;
+      ctx.fillStyle = `rgba(80,78,74,${0.04+Math.random()*0.08})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rw, rh, Math.random()*Math.PI, 0, Math.PI*2);
+      ctx.fill();
     }
   }
 
@@ -777,7 +791,8 @@
   }
 
   /* ==================== 塗り ==================== */
-  const MR=105,MG=102,MB=95;
+  /* 塗りつけ時: 写真1枚目 — 暗い湿ったモルタル、はっきりした骨材感 */
+  const MR=82, MG=80, MB=75; // 濡れた暗いモルタルグレー
 
   function paintSurface(p, uvHits) {
     if(uvHits.length<2||trowelMortar<=0) return;
@@ -831,13 +846,28 @@
     ctx.ellipse(0,0,halfBlade*0.65,strokeW*0.28,0,0,Math.PI*2); ctx.fill();
     ctx.restore();
 
-    for(let i=0;i<45;i++){
+    /* 塗りつけ: 荒い骨材感 (写真1枚目) */
+    for(let i=0;i<70;i++){
       const pt2=pts[Math.min(Math.floor(Math.random()*pts.length),pts.length-1)];
-      const gx=pt2.x+(Math.random()-0.5)*strokeW*2.4,gy=pt2.y+(Math.random()-0.5)*strokeW*2.4;
-      const v=Math.floor(78+Math.random()*40-strokeFactor*12);
-      ctx.fillStyle=`rgba(${v},${v-1},${v-3},${((0.22+Math.random()*0.42)*intensity*strokeFactor).toFixed(2)})`;
-      ctx.beginPath(); ctx.arc(gx,gy,Math.random()*1.9+0.3,0,Math.PI*2); ctx.fill();
+      const gx=pt2.x+(Math.random()-0.5)*strokeW*2.6, gy=pt2.y+(Math.random()-0.5)*strokeW*2.6;
+      /* 大小混在の骨材 */
+      const r2 = Math.random() < 0.15 ? Math.random()*4+2 : Math.random()*1.8+0.3;
+      const v=Math.floor(55+Math.random()*45-strokeFactor*10);
+      ctx.fillStyle=`rgba(${v},${v-2},${v-4},${((0.35+Math.random()*0.55)*intensity*strokeFactor).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(gx,gy,r2,0,Math.PI*2); ctx.fill();
     }
+
+    /* 塗りつけ端: 材料がはみ出す不均一な輪郭 */
+    ctx.save(); ctx.translate(mid.x,mid.y); ctx.rotate(bladeAngle);
+    for(let i=0;i<8;i++){
+      const ex=(Math.random()-0.5)*halfBlade*2;
+      const ey=(Math.random()<0.5?1:-1)*(strokeW*0.85+Math.random()*18);
+      const er=8+Math.random()*20;
+      const va=Math.floor(70+Math.random()*30);
+      ctx.fillStyle=`rgba(${va},${va-2},${va-4},${(0.4*intensity*strokeFactor).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(ex,ey,er,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
 
     /* 厚みマップ & 塗りすぎ警告 */
     let avgT=0,avgCnt=0;
@@ -874,14 +904,47 @@
     if(uvHits.length<2) return;
     const ctx=p.colorCtx, W=p.W, H=p.H;
     const pts=uvHits.map(uv=>({x:uv.x*W,y:(1-uv.y)*H}));
-    const first=pts[0],last=pts[pts.length-1];
+    const first=pts[0], last=pts[pts.length-1];
     const mid=pts[Math.floor(pts.length/2)];
-    const bdx=last.x-first.x,bdy=last.y-first.y;
+    const bdx=last.x-first.x, bdy=last.y-first.y;
     const bladeLen=Math.sqrt(bdx*bdx+bdy*bdy);
     const bladeAngle=Math.atan2(bdy,bdx);
-    ctx.fillStyle='rgba(185,180,172,0.06)';
-    for(const pt of pts){ ctx.beginPath(); ctx.arc(pt.x,pt.y,40,0,Math.PI*2); ctx.fill(); }
-    drawKoteNami(ctx, mid, bladeLen/2, bladeAngle, 36, 1.0, 'smooth');
+    const halfBlade=bladeLen/2;
+    const strokeW=40;
+
+    /* 均し: 写真2枚目 — 明るいシルバーグレーで上塗り */
+    for(const pt of pts){
+      const g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,strokeW);
+      g.addColorStop(0,   'rgba(195,196,194,0.55)'); // 明るいシルバー
+      g.addColorStop(0.5, 'rgba(188,189,187,0.35)');
+      g.addColorStop(1,   'rgba(185,186,184,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(pt.x,pt.y,strokeW,0,Math.PI*2); ctx.fill();
+    }
+
+    /* 均し面の光沢帯 (写真2枚目の明るい領域) */
+    ctx.save(); ctx.translate(mid.x,mid.y); ctx.rotate(bladeAngle);
+    const shine=ctx.createLinearGradient(-halfBlade*0.8,0,halfBlade*0.8,0);
+    shine.addColorStop(0,   'rgba(215,216,214,0)');
+    shine.addColorStop(0.25,'rgba(215,216,214,0.22)');
+    shine.addColorStop(0.5, 'rgba(220,221,219,0.30)');
+    shine.addColorStop(0.75,'rgba(215,216,214,0.22)');
+    shine.addColorStop(1,   'rgba(215,216,214,0)');
+    ctx.fillStyle=shine;
+    ctx.beginPath(); ctx.ellipse(0,0,halfBlade*0.8,strokeW*0.22,0,0,Math.PI*2); ctx.fill();
+
+    /* 均し面の微細ムラ (写真2枚目の微妙なトーン差) */
+    for(let i=0;i<20;i++){
+      const mx=(Math.random()-0.5)*halfBlade*1.8;
+      const my=(Math.random()-0.5)*strokeW*1.6;
+      const mr=12+Math.random()*22;
+      const mv=Math.floor(185+Math.random()*25);
+      ctx.fillStyle=`rgba(${mv},${mv},${mv-2},${(0.06+Math.random()*0.10).toFixed(2)})`;
+      ctx.beginPath(); ctx.ellipse(mx,my,mr,mr*0.45,Math.random()*Math.PI,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+
+    /* 均し鏝波: 非常に浅く細かい */
+    drawKoteNami(ctx, mid, halfBlade, bladeAngle, strokeW, 0.5, 'smooth');
     p.colorTex.needsUpdate=true;
     _smoothHeight(p, uvHits);
   }
