@@ -117,7 +117,7 @@
         mat = new THREE.MeshStandardMaterial({
           map: painter.colorTex,
           displacementMap: painter.heightTex,
-          displacementScale: 0.04,
+          displacementScale: 0.006,
           roughness: 0.95, transparent: true, opacity: 0.88,
           side: THREE.DoubleSide
         });
@@ -397,7 +397,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v3.8</div>
+  <div id="version">v3.9</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に近づき手首をひねる → コテ返し<br>
@@ -572,7 +572,7 @@
     const heightTex = new THREE.CanvasTexture(staticPainter.heightCanvas);
     staticPainter.heightTex = heightTex;
     mesh.material.displacementMap   = heightTex;
-    mesh.material.displacementScale = 0.04;
+    mesh.material.displacementScale = 0.006;
     mesh.material.displacementBias  = 0;
     mesh.material.needsUpdate = true;
 
@@ -949,14 +949,27 @@
     _smoothHeight(p, uvHits);
   }
 
-  function _paintHeight(p,uvHits,strokeFactor=1){
-    const r=Math.round(p.HW*0.084/1.2*0.6);
-    for(const uv of uvHits){
-      const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
-      for(let y=Math.max(0,cy-r);y<Math.min(p.HH,cy+r+1);y++){
-        for(let x=Math.max(0,cx-r);x<Math.min(p.HW,cx+r+1);x++){
-          const dist=Math.sqrt((x-cx)**2+(y-cy)**2); if(dist>r) continue;
-          p.heightData[y*p.HW+x]+=( (1-dist/r)*strokeFactor*0.85 );
+  function _paintHeight(p, uvHits, strokeFactor=1) {
+    /* 写真のような均一な薄いコート:
+       ランダムな山ではなく、ストローク方向に沿った
+       ほぼ平坦な層を積み上げる                      */
+    const r = Math.round(p.HW * 0.084 / 1.2 * 0.65);
+    const addBase = strokeFactor * 0.55; // 均一加算量
+
+    for (const uv of uvHits) {
+      const cx = Math.floor(uv.x * p.HW);
+      const cy = Math.floor((1 - uv.y) * p.HH);
+      for (let y = Math.max(0, cy-r); y < Math.min(p.HH, cy+r+1); y++) {
+        for (let x = Math.max(0, cx-r); x < Math.min(p.HW, cx+r+1); x++) {
+          const dist = Math.sqrt((x-cx)**2 + (y-cy)**2);
+          if (dist > r) continue;
+          /* 中央は平坦に、端だけわずかに下がる (薄い層感) */
+          const edgeFade = dist < r * 0.75
+            ? 1.0                          // 中央75%は均一
+            : 1 - (dist - r*0.75) / (r*0.25); // 端15%だけフェード
+          /* 微細なランダムで鏝目を表現 */
+          const micro = 0.9 + Math.random() * 0.2;
+          p.heightData[y * p.HW + x] += addBase * edgeFade * micro;
         }
       }
     }
