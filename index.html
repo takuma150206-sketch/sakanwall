@@ -259,33 +259,28 @@
         const dist=this._bladeCenter.distanceTo(this._hawkPos);
 
         if(dist<SCOOP_DIST) {
-          /* 鏝板ゾーン内 */
-          if(!this.koteGaeshiDone) {
-            /* ★ コテ返し済みでない時だけ基準クォータニオンをキャプチャ */
-            if(!this.hawkEntryQuat) {
-              this.hawkEntryQuat  = obj.quaternion.clone();
-              this.hawkMaxAngle   = 0;
-              if(hawkMortar>0) setMessage('手首をひねってコテ返し！');
-            }
+          /* 鏝板ゾーン内: 鏝に材料が残っていても常にすくえる */
+          if(!this.hawkEntryQuat) {
+            this.hawkEntryQuat = obj.quaternion.clone();
+            this.hawkMaxAngle  = 0;
+            if(hawkMortar>0) setMessage('手首をひねってコテ返し！');
+          }
 
-            /* ★ 最大到達角を記録(返してから戻しても検出できる) */
-            const twist = obj.quaternion.angleTo(this.hawkEntryQuat);
-            this.hawkMaxAngle = Math.max(this.hawkMaxAngle || 0, twist);
+          const twist = obj.quaternion.angleTo(this.hawkEntryQuat);
+          this.hawkMaxAngle = Math.max(this.hawkMaxAngle || 0, twist);
 
-            /* ★ 鏝に材料が残っていても追加でのせられる (上限まで加算) */
-            if(this.hawkMaxAngle > Math.PI * 0.22 && hawkMortar > 0) {
-              const space = TROWEL_MAX - trowelMortar; // 残り積載可能量
-              const amt   = Math.min(KOTE_AMOUNT, hawkMortar, Math.max(space, KOTE_AMOUNT * 0.3));
-              hawkMortar   = Math.max(0, hawkMortar   - amt);
-              trowelMortar = Math.min(TROWEL_MAX * 1.3, trowelMortar + amt); // 上限を130%まで許容
-              this.koteGaeshiDone = true;
-              this.hawkEntryQuat  = null;
-              this.hawkMaxAngle   = 0;
-              if(typeof updateMortarVisuals==='function') updateMortarVisuals();
-              setMessage('コテ返し ✓ 材料を乗せました');
-              hapticPulse(0.55, 150);
-              if(typeof sound!=='undefined') sound.playKoteGaeshi();
-            }
+          if(this.hawkMaxAngle > Math.PI * 0.22 && hawkMortar > 0) {
+            /* 上限なしで追加積み込み (TROWEL_MAX * 1.3 まで) */
+            const amt = Math.min(KOTE_AMOUNT, hawkMortar);
+            hawkMortar   = Math.max(0, hawkMortar - amt);
+            trowelMortar = Math.min(TROWEL_MAX * 1.3, trowelMortar + amt);
+            this.koteGaeshiDone = true;
+            this.hawkEntryQuat  = null;
+            this.hawkMaxAngle   = 0;
+            if(typeof updateMortarVisuals==='function') updateMortarVisuals();
+            setMessage('コテ返し ✓ 材料を乗せました');
+            hapticPulse(0.55, 150);
+            if(typeof sound!=='undefined') sound.playKoteGaeshi();
           }
         } else {
           /* 鏝板ゾーン外 → 基準をリセット */
@@ -408,7 +403,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v3.4</div>
+  <div id="version">v3.5</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に鏝を近づけ<strong>手首をひねる</strong> → コテ返し<br>
