@@ -168,7 +168,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.5</div>
+  <div id="version">v4.6</div>
   <div id="info">
     <strong>左官MR練習</strong><br>
     Ⓐ 壁設置 / 左G 補充<br>
@@ -185,18 +185,32 @@
     renderer="colorManagement:true;antialias:true;alpha:true;">
 
     <a-assets>
-      <!-- 解像度を削減: 256×256, 64×64 -->
+      <!-- heatCanvas: 壁と同じアスペクト比 (1.2:1.0 = 6:5) -->
       <canvas id="wallCanvas"  width="256" height="256"></canvas>
       <canvas id="htCanvas"    width="64"  height="64"></canvas>
+      <canvas id="heatCanvas"  width="192" height="160"></canvas>
       <canvas id="chartCanvas" width="400" height="256"></canvas>
       <canvas id="opsCanvas"   width="400" height="400"></canvas>
     </a-assets>
 
-    <!-- 壁: セグメントを削減 -->
+    <!-- 塗り壁 -->
     <a-entity id="wall"
       geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:32;segmentsHeight:32"
       material="src:#wallCanvas;shader:standard;roughness:0.95;metalness:0;"
       position="0 1.3 -0.7"></a-entity>
+
+    <!-- 塗り厚マップ壁 (塗り壁の右隣に配置) -->
+    <a-entity id="heatWall"
+      geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:1;segmentsHeight:1"
+      material="src:#heatCanvas;shader:flat;"
+      position="1.5 1.3 -0.7">
+    </a-entity>
+
+    <!-- 厚みマップ壁のラベル -->
+    <a-text value="塗り厚マップ" position="1.5 1.85 -0.7"
+            align="center" color="#fff" width="2.0"
+            geometry="primitive:plane;width:0.8;height:0.12"
+            material="color:#000;opacity:0.6"></a-text>
 
     <!-- HUD -->
     <a-entity position="-0.95 1.85 -0.55" rotation="0 35 0">
@@ -383,6 +397,7 @@
     if(p.colorTex) p.colorTex.needsUpdate=true;
     if(p.heightTex) p.heightTex.needsUpdate=true;
     updateCoverage(p); drawChart(p);
+    if(typeof updateHeatWall==='function') updateHeatWall(p);
   }
 
   const staticPainter=createPainter();
@@ -396,6 +411,16 @@
     mesh.material.displacementMap=staticPainter.heightTex;
     mesh.material.displacementScale=0.014;
     mesh.material.needsUpdate=true;
+
+    /* 塗り厚マップ壁のテクスチャをセット */
+    const heatCvs=document.getElementById('heatCanvas');
+    staticPainter.heatTex=new THREE.CanvasTexture(heatCvs);
+    const heatWallEl=document.getElementById('heatWall');
+    if(heatWallEl){
+      const hm=heatWallEl.getObject3D('mesh');
+      if(hm){hm.material.map=staticPainter.heatTex;hm.material.needsUpdate=true;}
+    }
+    updateHeatWall(staticPainter); // 初期描画(グレー)
 
     const chartTex=new THREE.CanvasTexture(document.getElementById('chartCanvas'));
     const cp=document.getElementById('chartPanel');
@@ -413,6 +438,56 @@
     }
     hCtx.putImageData(p.htImgData,0,0);
     if(p.heightTex) p.heightTex.needsUpdate=true;
+  }
+
+  /* === 塗り厚マップ壁の描画 ===
+     heightData の値を色にマッピングして隣の壁に表示
+     灰=未塗 / 青=薄 / 緑=適正 / 橙=厚め / 赤=厚すぎ  */
+  const HEAT_MIN_OK=1.5, HEAT_MAX_OK=5.0, HEAT_TOO_FAT=9.0;
+
+  function updateHeatWall(p){
+    const hc=document.getElementById('heatCanvas');
+    if(!hc) return;
+    const hx=hc.getContext('2d');
+    const HW2=hc.width, HH2=hc.height;
+    const img=hx.createImageData(HW2,HH2);
+    const d=img.data;
+
+    for(let y=0;y<HH2;y++){
+      for(let x=0;x<HW2;x++){
+        /* heatCanvas(192×160) → heightData(64×64) にマッピング */
+        const px=Math.floor(x/HW2*HW);
+        const py=Math.floor(y/HH2*HH);
+        const h=p.heightData[py*HW+px];
+        let r,g,b;
+        if(h<0.08){r=180;g=178;b=174;}          // 未塗: グレー
+        else if(h<HEAT_MIN_OK){                  // 薄すぎ: 青
+          const t=h/HEAT_MIN_OK;
+          r=30;g=80+Math.floor(90*t);b=230;
+        } else if(h<=HEAT_MAX_OK){               // 適正: 緑
+          const t=(h-HEAT_MIN_OK)/(HEAT_MAX_OK-HEAT_MIN_OK);
+          r=30+Math.floor(70*t);g=210;b=40;
+        } else if(h<=HEAT_TOO_FAT){              // 厚め: 橙
+          const t=(h-HEAT_MAX_OK)/(HEAT_TOO_FAT-HEAT_MAX_OK);
+          r=225+Math.floor(30*t);g=Math.floor(180*(1-t*0.6));b=10;
+        } else{r=255;g=15;b=10;}                 // 厚すぎ: 赤
+        const i=(y*HW2+x)*4;
+        d[i]=r;d[i+1]=g;d[i+2]=b;d[i+3]=255;
+      }
+    }
+    hx.putImageData(img,0,0);
+
+    /* 凡例を下部に描画 */
+    hx.fillStyle='rgba(0,0,0,0.55)';
+    hx.fillRect(0,HH2-22,HW2,22);
+    hx.font='12px sans-serif';hx.textAlign='left';
+    const leg=[{c:'#aaa',t:'未塗'},{c:'#3366ff',t:'薄い'},{c:'#22cc44',t:'適正'},{c:'#ffaa00',t:'厚め'},{c:'#ff2222',t:'厚すぎ'}];
+    leg.forEach((l,i)=>{
+      hx.fillStyle=l.c;hx.fillRect(4+i*36,HH2-16,10,10);
+      hx.fillStyle='#fff';hx.fillText(l.t,16+i*36,HH2-6);
+    });
+
+    if(p.heatTex) p.heatTex.needsUpdate=true;
   }
 
   /* === 塗り === */
@@ -460,6 +535,7 @@
     markDirty(p);
     // ハイト (間引きループ)
     paintHeight(p,uvHits,sf);
+    updateHeatWall(p);
     trowelMortar=Math.max(0,trowelMortar-PAINT_COST);
     if(trowelMortar===0) setMessage('泥切れ。コテ返しを');
     updateMortarVisuals();
@@ -488,6 +564,7 @@
     drawKoteNami(ctx,mid,bladeLen/2,bladeAngle,sw,0.45,'smooth');
     markDirty(p);
     smoothHeight(p,uvHits);
+    updateHeatWall(p);
     drawChart(p);
   }
 
