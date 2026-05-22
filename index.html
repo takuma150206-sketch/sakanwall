@@ -194,14 +194,6 @@
       this._hawkPos     = new THREE.Vector3();
       this._bladeCenter = new THREE.Vector3();
 
-      this.el.addEventListener('gripdown', () => {
-        this.smoothing=true;
-        if(typeof setMessage==='function') setMessage('均しモード ON');
-      });
-      this.el.addEventListener('gripup', () => {
-        this.smoothing=false;
-        if(typeof setMessage==='function') setMessage('');
-      });
       this.el.addEventListener('abuttondown', () => {
         const obj=this.el.object3D; if(!obj) return;
         obj.getWorldPosition(this._tmpPos);
@@ -345,7 +337,9 @@
       }
 
       const painter=hitEntry.painter;
-      if(this.smoothing) {
+      /* ★ 材料がない → 自動で均し / ある → 塗り */
+      const autoSmooth = (trowelMortar <= 0);
+      if(autoSmooth) {
         if(typeof smoothSurface==='function') smoothSurface(painter, uvHits);
         hapticPulse(0.08,20);
       } else {
@@ -403,12 +397,11 @@
   </style>
 </head>
 <body>
-  <div id="version">v3.5</div>
+  <div id="version">v3.6</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
-    鏝板に鏝を近づけ<strong>手首をひねる</strong> → コテ返し<br>
-    コテ返し後に壁を塗れる / 泥切れで再コテ返し<br>
-    速く動かす=高音「シュッ」/ 遅く=低音「ズズー」<br>
+    鏝板に近づき手首をひねる → コテ返し<br>
+    材料あり → 塗る / 材料なし → 自動で均す<br>
     Enter AR → Quest 3 が部屋を自動認識
   </div>
   <button id="enterAR" disabled>確認中...</button>
@@ -1025,12 +1018,12 @@
     c2d.strokeStyle='rgba(255,255,255,0.2)'; c2d.lineWidth=2;
     c2d.beginPath(); c2d.moveTo(40,88); c2d.lineTo(CW-40,88); c2d.stroke();
     const items=[
-      {label:'Ⓐ',          desc:'静的壁を設置',   color:'#80EFFF'},
-      {label:'右グリップ',  desc:'均しモード',     color:'#FFD080'},
-      {label:'左グリップ',  desc:'鏝板を補充',     color:'#FFD080'},
-      {label:'鏝板に近づく',desc:'すくう',         color:'#88FF88'},
-      {label:'壁に近づく',  desc:'塗る',           color:'#88FF88'},
-      {label:'左レーザー',  desc:'採点/リセット',  color:'#dddddd'},
+      {label:'Ⓐ',          desc:'静的壁を設置',     color:'#80EFFF'},
+      {label:'左グリップ',  desc:'鏝板を補充',       color:'#FFD080'},
+      {label:'鏝板+ひねり', desc:'コテ返し(すくう)', color:'#88FF88'},
+      {label:'壁+材料あり', desc:'塗る',             color:'#88FF88'},
+      {label:'壁+材料なし', desc:'自動で均す',       color:'#FFB060'},
+      {label:'左レーザー',  desc:'採点/リセット',    color:'#dddddd'},
     ];
     c2d.textAlign='left';
     items.forEach((item,i)=>{
