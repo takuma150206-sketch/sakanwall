@@ -272,11 +272,12 @@
             const twist = obj.quaternion.angleTo(this.hawkEntryQuat);
             this.hawkMaxAngle = Math.max(this.hawkMaxAngle || 0, twist);
 
-            /* 閾値 40°(π×0.22) ── 少し傾けるだけで成功 */
+            /* ★ 鏝に材料が残っていても追加でのせられる (上限まで加算) */
             if(this.hawkMaxAngle > Math.PI * 0.22 && hawkMortar > 0) {
-              const amt = Math.min(KOTE_AMOUNT, hawkMortar);
+              const space = TROWEL_MAX - trowelMortar; // 残り積載可能量
+              const amt   = Math.min(KOTE_AMOUNT, hawkMortar, Math.max(space, KOTE_AMOUNT * 0.3));
               hawkMortar   = Math.max(0, hawkMortar   - amt);
-              trowelMortar = Math.min(TROWEL_MAX, trowelMortar + amt);
+              trowelMortar = Math.min(TROWEL_MAX * 1.3, trowelMortar + amt); // 上限を130%まで許容
               this.koteGaeshiDone = true;
               this.hawkEntryQuat  = null;
               this.hawkMaxAngle   = 0;
@@ -407,7 +408,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v3.3</div>
+  <div id="version">v3.4</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に鏝を近づけ<strong>手首をひねる</strong> → コテ返し<br>
@@ -666,67 +667,89 @@
       } catch(e) {}
     },
 
-    /* 塗り音: ノイズをバンドパスフィルタで成形
-       遅い → 低周波「ズズー」/ 速い → 高周波「シュッ」 */
+    /* 塗り音: 速度で変化「ズズー/シュッ」+ 粘り低域レイヤー */
     startScraping(speed) {
       if (!this.ctx || !this.noiseBuffer) return;
       this.stopScraping();
-      const src = this.ctx.createBufferSource();
-      src.buffer = this.noiseBuffer;
-      src.loop = true;
+      const now = this.ctx.currentTime;
 
+      // メイン: バンドパスで「擦る」音
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuffer; src.loop = true;
       this.scrapingFilter = this.ctx.createBiquadFilter();
       this.scrapingFilter.type = 'bandpass';
       this.scrapingFilter.frequency.value = this._speedToFreq(speed);
-      this.scrapingFilter.Q.value = 3.5;
+      this.scrapingFilter.Q.value = 4.0;
+
+      // サブ: ローパスで「粘り」感
+      const src2 = this.ctx.createBufferSource();
+      src2.buffer = this.noiseBuffer; src2.loop = true;
+      const lowFilt = this.ctx.createBiquadFilter();
+      lowFilt.type = 'lowpass'; lowFilt.frequency.value = 280;
+      const lowGain = this.ctx.createGain();
+      lowGain.gain.value = 0.045;
 
       this.scrapingGain = this.ctx.createGain();
-      this.scrapingGain.gain.value = 0;
-      this.scrapingGain.gain.linearRampToValueAtTime(0.10, this.ctx.currentTime + 0.04);
+      this.scrapingGain.gain.setValueAtTime(0, now);
+      this.scrapingGain.gain.linearRampToValueAtTime(0.12, now + 0.05);
 
       src.connect(this.scrapingFilter);
       this.scrapingFilter.connect(this.scrapingGain);
+      src2.connect(lowFilt); lowFilt.connect(lowGain);
+      lowGain.connect(this.scrapingGain);
       this.scrapingGain.connect(this.ctx.destination);
-      src.start();
-      this.scrapingNode = src;
+
+      src.start(); src2.start();
+      this.scrapingNode = src; this.scrapingNode2 = src2;
     },
 
     updateScraping(speed) {
-      if (!this.scrapingFilter) return;
-      this.scrapingFilter.frequency.setTargetAtTime(
-        this._speedToFreq(speed), this.ctx.currentTime, 0.06
-      );
+      if (!this.scrapingFilter || !this.ctx) return;
+      const freq = this._speedToFreq(speed);
+      const vol  = 0.08 + Math.min(speed, 20) / 20 * 0.08;
+      this.scrapingFilter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.05);
+      this.scrapingGain?.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
     },
 
     stopScraping() {
       if (!this.scrapingNode) return;
       try {
         this.scrapingGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.04);
-        const n = this.scrapingNode;
-        setTimeout(() => { try { n.stop(); } catch(e){} }, 200);
+        const n = this.scrapingNode, n2 = this.scrapingNode2;
+        setTimeout(()=>{ try{n.stop();}catch(e){} try{n2?.stop();}catch(e){} }, 200);
       } catch(e) {}
-      this.scrapingNode = null;
-      this.scrapingGain = null;
-      this.scrapingFilter = null;
+      this.scrapingNode = null; this.scrapingNode2 = null;
+      this.scrapingGain = null; this.scrapingFilter = null;
     },
 
-    /* コテ返し成功音: 湿った「ペチャッ」 */
+    /* コテ返し成功音: 湿った「ペチャッ」(低域+高域アタック2層) */
     playKoteGaeshi() {
       if (!this.ctx || !this.noiseBuffer) return;
+      const now = this.ctx.currentTime;
+
+      // 低域「ペチャ」
       const src = this.ctx.createBufferSource();
       src.buffer = this.noiseBuffer;
-
       const filt = this.ctx.createBiquadFilter();
       filt.type = 'lowpass';
-      filt.frequency.setValueAtTime(500, this.ctx.currentTime);
-      filt.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.18);
-
+      filt.frequency.setValueAtTime(600, now);
+      filt.frequency.exponentialRampToValueAtTime(80, now + 0.22);
       const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(0.55, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.28);
-
+      gain.gain.setValueAtTime(0.70, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
       src.connect(filt); filt.connect(gain); gain.connect(this.ctx.destination);
-      src.start(); src.stop(this.ctx.currentTime + 0.30);
+      src.start(now); src.stop(now + 0.35);
+
+      // 高域「ッ」アタック
+      const src2 = this.ctx.createBufferSource();
+      src2.buffer = this.noiseBuffer;
+      const filt2 = this.ctx.createBiquadFilter();
+      filt2.type = 'bandpass'; filt2.frequency.value = 2200; filt2.Q.value = 2;
+      const gain2 = this.ctx.createGain();
+      gain2.gain.setValueAtTime(0.40, now);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+      src2.connect(filt2); filt2.connect(gain2); gain2.connect(this.ctx.destination);
+      src2.start(now); src2.stop(now + 0.09);
     },
 
     _speedToFreq(speed) {
