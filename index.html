@@ -165,7 +165,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.0</div>
+  <div id="version">v4.0a</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     Ⓐ 壁を設置<br>
@@ -377,7 +377,7 @@
     p.lastCenterUV={x:midUV.x,y:midUV.y};
     const speedThin=Math.max(0,Math.min(1,speed/18));
     const sf=(0.25+Math.random()*0.75)*(1-speedThin*0.55);
-    const sw=36+Math.min(speed*1.5,20);
+    const sw=26+Math.min(speed*1.2,14);
     const intensity=Math.min(1,trowelMortar/(TROWEL_MAX*0.25));
     const cr=Math.round(MR-sf*18),cg=Math.round(MG-sf*16),cb=Math.round(MB-sf*14);
     for(const pt of pts){
