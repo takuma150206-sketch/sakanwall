@@ -397,7 +397,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.1</div>
+  <div id="version">v4.2</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に近づき手首をひねる → コテ返し<br>
@@ -416,16 +416,25 @@
     <a-assets>
       <canvas id="wallCanvas"   width="512" height="512"></canvas>
       <canvas id="heightCanvas" width="128" height="128"></canvas>
-      <canvas id="heatCanvas"   width="128" height="128"></canvas>
+      <canvas id="heatCanvas"   width="256" height="256"></canvas>
       <canvas id="opsCanvas"    width="512" height="512"></canvas>
     </a-assets>
 
-    <!-- 塗り厚ヒートマップ オーバーレイ (壁と同じ位置・サイズ) -->
-    <a-entity id="heatOverlay"
-      geometry="primitive:plane; width:1.2; height:1.0; segmentsWidth:1; segmentsHeight:1"
-      material="src:#heatCanvas; shader:flat; transparent:true; opacity:0.0;"
-      position="0 1.3 -0.698"
-      visible="false">
+    <!-- 塗り厚マップパネル (壁から独立・右手側に浮かぶ) -->
+    <a-entity id="heatPanel" visible="false" position="0.95 1.20 -0.60" rotation="0 -30 0">
+      <!-- パネル背景 -->
+      <a-plane width="0.72" height="0.62" color="#111" opacity="0.85"></a-plane>
+      <!-- ヒートマップ表示 -->
+      <a-plane id="heatMapPlane"
+               width="0.60" height="0.50"
+               position="0 0.02 0.002"
+               material="src:#heatCanvas; shader:flat; transparent:false;"></a-plane>
+      <!-- 凡例 -->
+      <a-entity position="0 -0.27 0.003">
+        <a-plane width="0.72" height="0.08" color="#222" opacity="0.9"></a-plane>
+        <a-text value="🔵薄  🟢適正  🟡厚め  🔴厚すぎ  ⬜未塗"
+                align="center" color="#fff" width="1.3" position="0 0 0.003"></a-text>
+      </a-entity>
     </a-entity>
 
     <!-- 空間スキャナ -->
@@ -658,76 +667,86 @@
   }
 
   /* ==================== 塗り厚ヒートマップ ====================
-     heightData の値を色にマッピングして壁オーバーレイに表示
-     青=薄すぎ / 緑=適正 / 黄=やや厚 / 赤=厚すぎ             */
+     壁とは独立した専用パネルに表示
+     青=薄すぎ / 緑=適正 / 黄=やや厚 / 赤=厚すぎ / 白=未塗  */
   const heatCanvas = document.getElementById('heatCanvas');
   const heatCtx    = heatCanvas.getContext('2d');
   const HM_W = heatCanvas.width, HM_H = heatCanvas.height;
-  let heatTex = null;
+  let heatTex     = null;
   let heatVisible = false;
 
-  // 適正厚みの範囲 (heightData の値ベース)
-  const HEAT_MIN_OK  = 1.5;   // これ以下 = 薄すぎ(青)
-  const HEAT_MAX_OK  = 5.0;   // これ以下 = 適正(緑)
-  const HEAT_TOO_FAT = 9.0;   // これ以上 = 厚すぎ(赤)
+  const HEAT_MIN_OK  = 1.5;
+  const HEAT_MAX_OK  = 5.0;
+  const HEAT_TOO_FAT = 9.0;
 
   sceneEl.addEventListener('loaded', () => {
     heatTex = new THREE.CanvasTexture(heatCanvas);
-    const overlay = document.getElementById('heatOverlay');
-    if (overlay) {
-      const mesh = overlay.getObject3D('mesh');
+    const plane = document.getElementById('heatMapPlane');
+    if (plane) {
+      const mesh = plane.getObject3D('mesh');
       if (mesh) { mesh.material.map = heatTex; mesh.material.needsUpdate = true; }
     }
+    /* 初期描画: 真っ白(未塗り) */
+    heatCtx.fillStyle = '#e8e8e8';
+    heatCtx.fillRect(0, 0, HM_W, HM_H);
+    if (heatTex) heatTex.needsUpdate = true;
   });
 
   function updateHeatmap(p) {
-    if (!heatVisible) return;
     const imgData = heatCtx.createImageData(HM_W, HM_H);
     const d = imgData.data;
-    /* heightData は painter のサイズ (p.HW × p.HH) なので
-       HM_W × HM_H にリサンプリング */
+
+    /* 全体の最大値を取得してスケール感をつかむ */
+    let maxH = 0;
+    for (let i = 0; i < p.heightData.length; i++)
+      if (p.heightData[i] > maxH) maxH = p.heightData[i];
+
     for (let y = 0; y < HM_H; y++) {
       for (let x = 0; x < HM_W; x++) {
         const px = Math.floor(x / HM_W * p.HW);
         const py = Math.floor(y / HM_H * p.HH);
         const h  = p.heightData[py * p.HW + px];
-        let r=0, g=0, b=0, a=0;
-        if (h < 0.1) {
-          // 未塗り: 透明
-          a = 0;
+        let r, g, b;
+
+        if (h < 0.08) {
+          /* 未塗り: 薄いグレー (下地色) */
+          r=220; g=220; b=220;
         } else if (h < HEAT_MIN_OK) {
-          // 薄すぎ: 青
+          /* 薄すぎ: 青 */
           const t = h / HEAT_MIN_OK;
-          r=20; g=80+Math.floor(60*t); b=220; a=Math.floor(180*t+40);
+          r=30; g=100+Math.floor(80*t); b=230;
         } else if (h <= HEAT_MAX_OK) {
-          // 適正: 緑
+          /* 適正: 緑 */
           const t = (h-HEAT_MIN_OK)/(HEAT_MAX_OK-HEAT_MIN_OK);
-          r=20+Math.floor(40*t); g=200; b=40; a=160;
+          r=30+Math.floor(60*t); g=210; b=40;
         } else if (h <= HEAT_TOO_FAT) {
-          // やや厚: 黄→オレンジ
+          /* やや厚: 黄→オレンジ */
           const t = (h-HEAT_MAX_OK)/(HEAT_TOO_FAT-HEAT_MAX_OK);
-          r=220+Math.floor(35*t); g=Math.floor(200*(1-t*0.5)); b=10; a=170;
+          r=230+Math.floor(25*t); g=Math.floor(190*(1-t*0.6)); b=10;
         } else {
-          // 厚すぎ: 赤
-          r=255; g=20; b=10; a=200;
+          /* 厚すぎ: 赤 */
+          r=255; g=15; b=10;
         }
-        const i = (y*HM_W+x)*4;
-        d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=a;
+        const i=(y*HM_W+x)*4;
+        d[i]=r; d[i+1]=g; d[i+2]=b; d[i+3]=255;
       }
     }
     heatCtx.putImageData(imgData, 0, 0);
+
+    /* 壁の輪郭線を重ねる */
+    heatCtx.strokeStyle='rgba(255,255,255,0.4)';
+    heatCtx.lineWidth=1;
+    heatCtx.strokeRect(1, 1, HM_W-2, HM_H-2);
+
     if (heatTex) heatTex.needsUpdate = true;
   }
 
   /* ヒートマップトグル */
   document.getElementById('heatBtn').addEventListener('click', () => {
     heatVisible = !heatVisible;
-    const overlay = document.getElementById('heatOverlay');
-    const label   = document.getElementById('heatBtnLabel');
-    if (overlay) {
-      overlay.setAttribute('visible', heatVisible);
-      overlay.setAttribute('material', `src:#heatCanvas; shader:flat; transparent:true; opacity:${heatVisible?0.82:0}`);
-    }
+    const panel = document.getElementById('heatPanel');
+    const label = document.getElementById('heatBtnLabel');
+    if (panel) panel.setAttribute('visible', heatVisible);
     if (label) label.setAttribute('value', `厚みマップ: ${heatVisible?'ON':'OFF'}`);
     document.getElementById('heatBtn').setAttribute('color', heatVisible?'#28a':'#555');
     if (heatVisible) updateHeatmap(staticPainter);
@@ -985,7 +1004,7 @@
 
     /* ハイトマップ */
     _paintHeight(p, uvHits, strokeFactor);
-    if(typeof updateHeatmap==='function') updateHeatmap(p);
+    if(heatVisible && typeof updateHeatmap==='function') updateHeatmap(p);
 
     trowelMortar=Math.max(0,trowelMortar-PAINT_COST);
     if(trowelMortar===0) setMessage('泥がなくなりました。鏝板からすくってください');
@@ -1039,7 +1058,7 @@
     drawKoteNami(ctx, mid, halfBlade, bladeAngle, strokeW, 0.5, 'smooth');
     p.colorTex.needsUpdate=true;
     _smoothHeight(p, uvHits);
-    if(typeof updateHeatmap==='function') updateHeatmap(p);
+    if(heatVisible && typeof updateHeatmap==='function') updateHeatmap(p);
   }
 
   function _paintHeight(p, uvHits, strokeFactor=1) {
