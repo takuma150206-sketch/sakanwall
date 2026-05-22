@@ -397,7 +397,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.2</div>
+  <div id="version">v4.3</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に近づき手首をひねる → コテ返し<br>
@@ -421,20 +421,41 @@
     </a-assets>
 
     <!-- 塗り厚マップパネル (壁から独立・右手側に浮かぶ) -->
-    <a-entity id="heatPanel" visible="false" position="0.95 1.20 -0.60" rotation="0 -30 0">
+    <a-entity id="heatPanel" visible="false" position="0.95 1.25 -0.60" rotation="0 -30 0">
       <!-- パネル背景 -->
-      <a-plane width="0.72" height="0.62" color="#111" opacity="0.85"></a-plane>
-      <!-- ヒートマップ表示 -->
-      <a-plane id="heatMapPlane"
-               width="0.60" height="0.50"
-               position="0 0.02 0.002"
-               material="src:#heatCanvas; shader:flat; transparent:false;"></a-plane>
-      <!-- 凡例 -->
-      <a-entity position="0 -0.27 0.003">
-        <a-plane width="0.72" height="0.08" color="#222" opacity="0.9"></a-plane>
-        <a-text value="🔵薄  🟢適正  🟡厚め  🔴厚すぎ  ⬜未塗"
-                align="center" color="#fff" width="1.3" position="0 0 0.003"></a-text>
+      <a-plane width="0.80" height="0.92" color="#111" opacity="0.90"></a-plane>
+
+      <!-- タイトル -->
+      <a-entity position="0 0.41 0.003">
+        <a-plane width="0.80" height="0.08" color="#1a3a5c" opacity="0.95"></a-plane>
+        <a-text value="塗り厚マップ" align="center" color="#fff" width="1.6" position="0 0 0.003"></a-text>
       </a-entity>
+
+      <!-- ヒートマップ本体 -->
+      <a-plane id="heatMapPlane"
+               width="0.68" height="0.48"
+               position="0 0.10 0.003"
+               material="src:#heatCanvas; shader:flat; transparent:false;"></a-plane>
+
+      <!-- 凡例バー -->
+      <a-entity position="0 -0.17 0.003">
+        <a-plane width="0.78" height="0.065" color="#1a1a1a" opacity="0.9"></a-plane>
+        <a-text value="🔵薄すぎ  🟢適正  🟡やや厚  🔴厚すぎ  ░未塗"
+                align="center" color="#ddd" width="1.3" position="0 0 0.003"></a-text>
+      </a-entity>
+
+      <!-- 統計情報 -->
+      <a-entity position="0 -0.30 0.003">
+        <a-plane width="0.78" height="0.19" color="#0d1f0d" opacity="0.92"></a-plane>
+        <a-text id="heatStatUnpainted" value="未塗り  : ---%" position="-0.15  0.065 0.003" align="left" color="#aaa"    width="1.2"></a-text>
+        <a-text id="heatStatThin"      value="薄すぎ  : ---%" position="-0.15  0.020 0.003" align="left" color="#5599ff" width="1.2"></a-text>
+        <a-text id="heatStatOk"        value="適  正  : ---%" position="-0.15 -0.025 0.003" align="left" color="#44dd44" width="1.2"></a-text>
+        <a-text id="heatStatThick"     value="厚すぎ  : ---%" position="-0.15 -0.070 0.003" align="left" color="#ff4444" width="1.2"></a-text>
+        <a-text id="heatStatAvg"       value="平均厚み: ---" position="0.28  0.065 0.003" align="left" color="#ffdd88" width="1.2"></a-text>
+        <a-text id="heatStatMax"       value="最大厚み: ---" position="0.28  0.020 0.003" align="left" color="#ffdd88" width="1.2"></a-text>
+        <a-text id="heatStatScore"     value="総合評価: ---" position="0.28 -0.025 0.003" align="left" color="#ffffff" width="1.2"></a-text>
+      </a-entity>
+
     </a-entity>
 
     <!-- 空間スキャナ -->
@@ -696,11 +717,28 @@
     const imgData = heatCtx.createImageData(HM_W, HM_H);
     const d = imgData.data;
 
-    /* 全体の最大値を取得してスケール感をつかむ */
-    let maxH = 0;
-    for (let i = 0; i < p.heightData.length; i++)
-      if (p.heightData[i] > maxH) maxH = p.heightData[i];
+    /* 統計計算 */
+    let cntUnpainted=0, cntThin=0, cntOk=0, cntThick=0, sumH=0, maxH=0;
+    const total = p.HW * p.HH;
+    for (let i = 0; i < total; i++) {
+      const h = p.heightData[i];
+      if      (h < 0.08)        cntUnpainted++;
+      else if (h < HEAT_MIN_OK) cntThin++;
+      else if (h <= HEAT_MAX_OK) cntOk++;
+      else                      cntThick++;
+      sumH += h;
+      if (h > maxH) maxH = h;
+    }
+    const painted = total - cntUnpainted;
+    const avgH    = painted > 0 ? sumH / painted : 0;
 
+    /* 総合評価 */
+    const okRatio   = painted > 0 ? cntOk / painted : 0;
+    const covRatio  = painted / total;
+    const score     = Math.round(covRatio * okRatio * 100);
+    let scoreLabel  = score >= 80 ? '◎ 優秀' : score >= 60 ? '○ 良好' : score >= 40 ? '△ 要改善' : '✕ 要やり直し';
+
+    /* ヒートマップ描画 */
     for (let y = 0; y < HM_H; y++) {
       for (let x = 0; x < HM_W; x++) {
         const px = Math.floor(x / HM_W * p.HW);
@@ -709,22 +747,17 @@
         let r, g, b;
 
         if (h < 0.08) {
-          /* 未塗り: 薄いグレー (下地色) */
           r=220; g=220; b=220;
         } else if (h < HEAT_MIN_OK) {
-          /* 薄すぎ: 青 */
           const t = h / HEAT_MIN_OK;
           r=30; g=100+Math.floor(80*t); b=230;
         } else if (h <= HEAT_MAX_OK) {
-          /* 適正: 緑 */
           const t = (h-HEAT_MIN_OK)/(HEAT_MAX_OK-HEAT_MIN_OK);
           r=30+Math.floor(60*t); g=210; b=40;
         } else if (h <= HEAT_TOO_FAT) {
-          /* やや厚: 黄→オレンジ */
           const t = (h-HEAT_MAX_OK)/(HEAT_TOO_FAT-HEAT_MAX_OK);
           r=230+Math.floor(25*t); g=Math.floor(190*(1-t*0.6)); b=10;
         } else {
-          /* 厚すぎ: 赤 */
           r=255; g=15; b=10;
         }
         const i=(y*HM_W+x)*4;
@@ -732,13 +765,24 @@
       }
     }
     heatCtx.putImageData(imgData, 0, 0);
-
-    /* 壁の輪郭線を重ねる */
-    heatCtx.strokeStyle='rgba(255,255,255,0.4)';
+    heatCtx.strokeStyle='rgba(255,255,255,0.35)';
     heatCtx.lineWidth=1;
     heatCtx.strokeRect(1, 1, HM_W-2, HM_H-2);
-
     if (heatTex) heatTex.needsUpdate = true;
+
+    /* 統計テキスト更新 */
+    const pct = v => `${(v/total*100).toFixed(1)}%`;
+    const setText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.setAttribute('value', val);
+    };
+    setText('heatStatUnpainted', `未塗り  : ${pct(cntUnpainted)}`);
+    setText('heatStatThin',      `薄すぎ  : ${pct(cntThin)}`);
+    setText('heatStatOk',        `適  正  : ${pct(cntOk)}`);
+    setText('heatStatThick',     `厚すぎ  : ${pct(cntThick)}`);
+    setText('heatStatAvg',       `平均厚み: ${avgH.toFixed(2)}`);
+    setText('heatStatMax',       `最大厚み: ${maxH.toFixed(2)}`);
+    setText('heatStatScore',     `総合評価: ${scoreLabel} (${score}点)`);
   }
 
   /* ヒートマップトグル */
