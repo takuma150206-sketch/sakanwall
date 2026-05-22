@@ -6,746 +6,421 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
-  /* ===== 刃の形状 ===== */
-  AFRAME.registerComponent('blade-shape', {
-    init: function () {
-      const hw=0.042, RECT=0.200, TOTAL=0.240, D=0.0025;
-      const bot=-TOTAL/2, rTop=bot+RECT, tip=bot+TOTAL;
-      const shape=new THREE.Shape();
-      shape.moveTo(-hw,bot); shape.lineTo(hw,bot);
-      shape.lineTo(hw,rTop); shape.lineTo(0,tip);
-      shape.lineTo(-hw,rTop); shape.closePath();
-      const geo=new THREE.ExtrudeGeometry(shape,{depth:D,bevelEnabled:false});
+  AFRAME.registerComponent('blade-shape',{
+    init:function(){
+      const hw=0.042,R=0.200,T=0.240,D=0.0025,bot=-T/2,rT=bot+R,tip=bot+T;
+      const sh=new THREE.Shape();
+      sh.moveTo(-hw,bot);sh.lineTo(hw,bot);sh.lineTo(hw,rT);sh.lineTo(0,tip);sh.lineTo(-hw,rT);sh.closePath();
+      const geo=new THREE.ExtrudeGeometry(sh,{depth:D,bevelEnabled:false});
       geo.translate(0,0,-D/2);
       this.el.setObject3D('mesh',new THREE.Mesh(geo,
-        new THREE.MeshStandardMaterial({color:0xc4c6ca,metalness:0.90,roughness:0.14,side:THREE.DoubleSide})
-      ));
+        new THREE.MeshStandardMaterial({color:0xc4c6ca,metalness:0.9,roughness:0.14,side:THREE.DoubleSide})));
     }
   });
 
-  /* ===== 鏝コンポーネント ===== */
-  AFRAME.registerComponent('trowel', {
-    init: function () {
-      this.lastTick=0; this.covCount=0;
-      this.wasContact=false; this.mouseDown=false;
-      this.hawkEntryQuat=null; this.hawkMaxAngle=0;
-      this.koteGaeshiDone=false;
-      this._lastPos=new THREE.Vector3(); this.currentSpeed=0;
-      this._lastMid=null; this._lastHalfBlade=0; this._lastAngle=0;
-      this._lastPainter=null;
+  AFRAME.registerComponent('trowel',{
+    init:function(){
+      this.lt=0;this.wc=false;this.md=false;
+      this.heq=null;this.hma=0;this.kgd=false;
+      this.lp=new THREE.Vector3();this.spd=0;
+      this.rc=new THREE.Raycaster();this.rc.far=0.08;
+      const Y0=-0.085,Y1=+0.115,BZ=-0.042;
+      this.bpts=[];
+      for(let i=0;i<9;i++) this.bpts.push(new THREE.Vector3(0,Y0+i/8*(Y1-Y0),BZ));
+      this._wp=new THREE.Vector3();this._fwd=new THREE.Vector3();
+      this._tp=new THREE.Vector3();this._hp=new THREE.Vector3();this._bc=new THREE.Vector3();
 
-      this.threeRC=new THREE.Raycaster(); this.threeRC.far=0.08;
-      const Y_BOT=-0.085,Y_TOP=+0.115,BZ=-0.042;
-      this.bladeLocalPts=[];
-      for(let i=0;i<9;i++){
-        const t=i/8;
-        this.bladeLocalPts.push(new THREE.Vector3(0,Y_BOT+t*(Y_TOP-Y_BOT),BZ));
-      }
-      this._wp=new THREE.Vector3(); this._fwd=new THREE.Vector3();
-      this._tp=new THREE.Vector3(); this._hp=new THREE.Vector3(); this._bc=new THREE.Vector3();
-
-      this.el.addEventListener('gripdown',()=>{});
       this.el.addEventListener('abuttondown',()=>{
-        const obj=this.el.object3D; if(!obj) return;
-        obj.getWorldPosition(this._tp);
+        const o=this.el.object3D;if(!o)return;
+        o.getWorldPosition(this._tp);
         document.getElementById('wall').setAttribute('position',{
-          x:parseFloat(this._tp.x.toFixed(3)),y:1.3,
-          z:parseFloat((this._tp.z-0.042).toFixed(3))
-        });
-        resetPainter(staticPainter);
-        setMessage('壁を設置 ✓');
+          x:+this._tp.x.toFixed(3),y:1.3,z:+(this._tp.z-0.042).toFixed(3)});
+        document.getElementById('heatWall').setAttribute('position',{
+          x:+this._tp.x.toFixed(3)+1.5,y:1.3,z:+(this._tp.z-0.042).toFixed(3)});
+        resetAll(); setMsg('壁を設置 ✓');
       });
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
-        hawkMortar=100; updateMortarVisuals(); setMessage('補充 🪣');
+        hawkMortar=100;updMortar();setMsg('補充 🪣');
       });
-      window.addEventListener('mousedown',()=>{this.mouseDown=true;});
-      window.addEventListener('mouseup',  ()=>{this.mouseDown=false;});
+      window.addEventListener('mousedown',()=>{this.md=true;});
+      window.addEventListener('mouseup',  ()=>{this.md=false;});
     },
-    tick: function(){
+    tick:function(){
       const now=performance.now();
-      if(now-this.lastTick<16) return;
-      this.lastTick=now;
+      if(now-this.lt<16)return;this.lt=now;
       const sc=document.querySelector('a-scene');
       const isXR=sc.is('vr-mode')||sc.is('ar-mode');
-      const obj=this.el.object3D; if(!obj) return;
-
-      /* 速度 */
-      const cp=new THREE.Vector3(); obj.getWorldPosition(cp);
-      this.currentSpeed=cp.distanceTo(this._lastPos)*60*100;
-      this._lastPos.copy(cp);
-
-      /* 右コンgamepadキャッシュ */
+      const o=this.el.object3D;if(!o)return;
+      const cp=new THREE.Vector3();o.getWorldPosition(cp);
+      this.spd=cp.distanceTo(this.lp)*60*100;this.lp.copy(cp);
       if(isXR){try{const s=sc.renderer?.xr?.getSession?.();
-        if(s?.inputSources){for(const src of s.inputSources){
-          if(src.handedness==='right'&&src.gamepad?.hapticActuators?.length>0){
-            window._rightGP=src.gamepad; break;}}}
+        if(s?.inputSources)for(const src of s.inputSources)
+          if(src.handedness==='right'&&src.gamepad?.hapticActuators?.length){window._rgp=src.gamepad;break;}
       }catch(e){}}
-
-      /* コテ返し */
       const lh=document.getElementById('leftHand');
       if(lh?.object3D){
         this._hp.set(0,0.012,-0.15).applyMatrix4(lh.object3D.matrixWorld);
-        this._bc.set(0,0.015,-0.042).applyMatrix4(obj.matrixWorld);
-        const dist=this._bc.distanceTo(this._hp);
-        if(dist<SCOOP_DIST){
-          if(!this.hawkEntryQuat){
-            this.hawkEntryQuat=obj.quaternion.clone(); this.hawkMaxAngle=0;
-            if(hawkMortar>0) setMessage('手首をひねってコテ返し！');
-          }
-          const twist=obj.quaternion.angleTo(this.hawkEntryQuat);
-          this.hawkMaxAngle=Math.max(this.hawkMaxAngle,twist);
-          if(this.hawkMaxAngle>Math.PI*0.22&&hawkMortar>0){
-            const amt=Math.min(KOTE_AMOUNT,hawkMortar);
+        this._bc.set(0,0.015,-0.042).applyMatrix4(o.matrixWorld);
+        if(this._bc.distanceTo(this._hp)<0.22){
+          if(!this.heq){this.heq=o.quaternion.clone();this.hma=0;if(hawkMortar>0)setMsg('手首をひねってコテ返し！');}
+          this.hma=Math.max(this.hma,o.quaternion.angleTo(this.heq));
+          if(this.hma>Math.PI*0.22&&hawkMortar>0){
+            const amt=Math.min(50,hawkMortar);
             hawkMortar=Math.max(0,hawkMortar-amt);
-            trowelMortar=Math.min(TROWEL_MAX*1.3,trowelMortar+amt);
-            this.koteGaeshiDone=true;
-            this.hawkEntryQuat=null; this.hawkMaxAngle=0;
-            updateMortarVisuals(); setMessage('コテ返し ✓');
-            haptic(0.55,150); sound.playKoteGaeshi();
+            trowelMortar=Math.min(78,trowelMortar+amt);
+            this.kgd=true;this.heq=null;this.hma=0;
+            updMortar();setMsg('コテ返し ✓');haptic(0.55,150);snd.playKG();
           }
-        } else { this.hawkEntryQuat=null; this.hawkMaxAngle=0; }
+        }else{this.heq=null;this.hma=0;}
       }
-
-      if(!isXR&&!this.mouseDown){lastCenterUV=null;this.wasContact=false;return;}
-
-      this._fwd.set(0,0,-1).transformDirection(obj.matrixWorld);
-      const wallMesh=document.getElementById('wall').getObject3D('mesh');
-      if(!wallMesh) return;
-
-      /* 中心点で壁判定 */
-      this._wp.copy(this.bladeLocalPts[4]).applyMatrix4(obj.matrixWorld);
-      this.threeRC.set(this._wp,this._fwd);
-      const cHits=this.threeRC.intersectObject(wallMesh,true);
-      if(!cHits.length){
-        if(this.wasContact){haptic(0,0);sound.stopScraping();}
-        lastCenterUV=null;this.wasContact=false;return;
+      if(!isXR&&!this.md){lastUV=null;this.wc=false;return;}
+      this._fwd.set(0,0,-1).transformDirection(o.matrixWorld);
+      const wm=document.getElementById('wall').getObject3D('mesh');if(!wm)return;
+      this._wp.copy(this.bpts[4]).applyMatrix4(o.matrixWorld);
+      this.rc.set(this._wp,this._fwd);
+      if(!this.rc.intersectObject(wm,true).length){
+        if(this.wc)snd.stop();lastUV=null;this.wc=false;return;
       }
-
-      /* 刃9点 */
-      const uvHits=[];
-      for(const lp of this.bladeLocalPts){
-        this._wp.copy(lp).applyMatrix4(obj.matrixWorld);
-        this.threeRC.set(this._wp,this._fwd);
-        const h=this.threeRC.intersectObject(wallMesh,true);
-        if(h.length&&h[0].uv) uvHits.push({x:h[0].uv.x,y:h[0].uv.y});
+      const uvs=[];
+      for(const lp of this.bpts){
+        this._wp.copy(lp).applyMatrix4(o.matrixWorld);
+        this.rc.set(this._wp,this._fwd);
+        const h=this.rc.intersectObject(wm,true);
+        if(h.length&&h[0].uv)uvs.push({x:h[0].uv.x,y:h[0].uv.y});
       }
-      if(uvHits.length<2){lastCenterUV=null;this.wasContact=false;return;}
-
-      if(!this.wasContact){haptic(0.65,55);sound.startScraping(this.currentSpeed);this.wasContact=true;}
-      else{sound.updateScraping(this.currentSpeed);}
-
-      const p=staticPainter;
-      const autoSmooth=(trowelMortar<=0);
-      if(autoSmooth){
-        smoothSurface(p,uvHits); haptic(0.08,20);
-      } else {
-        if(!this.koteGaeshiDone){setMessage('コテ返しで材料を取ってください');return;}
-        const pts=uvHits.map(uv=>({x:uv.x*p.W,y:(1-uv.y)*p.H}));
-        const f=pts[0],l=pts[pts.length-1];
-        const dx=l.x-f.x,dy=l.y-f.y;
-        this._lastMid=pts[Math.floor(pts.length/2)];
-        this._lastHalfBlade=Math.sqrt(dx*dx+dy*dy)/2;
-        this._lastAngle=Math.atan2(dy,dx);
-        this._lastPainter=p;
-        paintSurface(p,uvHits); haptic(0.13,20);
-        if(++this.covCount>=10){this.covCount=0;}
+      if(uvs.length<2){lastUV=null;this.wc=false;return;}
+      if(!this.wc){haptic(0.65,55);snd.start(this.spd);this.wc=true;}
+      else snd.upd(this.spd);
+      if(trowelMortar<=0){smooth(uvs);haptic(0.08,20);}
+      else{
+        if(!this.kgd){setMsg('コテ返しで材料を取ってください');return;}
+        paint(uvs);haptic(0.13,20);
       }
     }
   });
   </script>
   <style>
-    body{margin:0;font-family:-apple-system,"Hiragino Sans",sans-serif;}
-    #info{position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.6);color:#fff;
-      padding:8px 12px;border-radius:8px;font-size:12px;line-height:1.6;z-index:100;max-width:260px;}
-    #version{position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.5);color:#aaa;
-      padding:3px 8px;border-radius:6px;font-size:11px;z-index:100;}
-    #enterAR{position:fixed;bottom:20px;right:20px;padding:16px 32px;font-size:17px;
-      background:#555;color:#fff;border:none;border-radius:10px;cursor:pointer;z-index:100;font-weight:bold;}
-    #enterAR:hover:not(:disabled){background:#777;}
-    #enterAR:disabled{background:#444;cursor:not-allowed;}
-    #status{position:fixed;bottom:20px;left:20px;background:rgba(0,0,0,0.7);color:#fff;
-      padding:6px 10px;border-radius:6px;font-size:11px;z-index:100;}
+    body{margin:0;font-family:sans-serif;}
+    #ui{position:fixed;top:8px;left:8px;background:rgba(0,0,0,0.6);color:#fff;
+        padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.5;z-index:100;max-width:220px;}
+    #ver{position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.5);color:#aaa;
+         padding:3px 8px;border-radius:5px;font-size:10px;z-index:100;}
+    #btn{position:fixed;bottom:16px;right:16px;padding:14px 28px;font-size:16px;
+         background:#555;color:#fff;border:none;border-radius:8px;cursor:pointer;z-index:100;}
+    #btn:hover:not(:disabled){background:#777;}#btn:disabled{background:#444;cursor:not-allowed;}
+    #st{position:fixed;bottom:16px;left:16px;background:rgba(0,0,0,0.65);color:#fff;
+        padding:5px 9px;border-radius:5px;font-size:10px;z-index:100;}
   </style>
 </head>
 <body>
-  <div id="version">v4.6</div>
-  <div id="info">
-    <strong>左官MR練習</strong><br>
-    Ⓐ 壁設置 / 左G 補充<br>
-    鏝板+ひねり → コテ返し<br>
-    材料あり→塗る / なし→均す
-  </div>
-  <button id="enterAR" disabled>確認中...</button>
-  <div id="status">確認中...</div>
+  <div id="ver">v4.7</div>
+  <div id="ui"><strong>左官MR練習</strong><br>Ⓐ 壁設置 / 左G 補充<br>鏝板+ひねり→コテ返し<br>材料あり→塗 / なし→均</div>
+  <button id="btn" disabled>確認中...</button>
+  <div id="st">確認中...</div>
 
-  <a-scene
-    background="transparent:true"
-    vr-mode-ui="enabled:false"
-    webxr="optionalFeatures:hit-test,local-floor;"
-    renderer="colorManagement:true;antialias:true;alpha:true;">
-
+  <a-scene background="transparent:true" vr-mode-ui="enabled:false"
+           webxr="optionalFeatures:hit-test,local-floor;"
+           renderer="colorManagement:true;antialias:false;alpha:true;">
     <a-assets>
-      <!-- heatCanvas: 壁と同じアスペクト比 (1.2:1.0 = 6:5) -->
-      <canvas id="wallCanvas"  width="256" height="256"></canvas>
-      <canvas id="htCanvas"    width="64"  height="64"></canvas>
-      <canvas id="heatCanvas"  width="192" height="160"></canvas>
-      <canvas id="chartCanvas" width="400" height="256"></canvas>
-      <canvas id="opsCanvas"   width="400" height="400"></canvas>
+      <canvas id="wCvs" width="128" height="128"></canvas>
+      <canvas id="hCvs" width="32"  height="32"></canvas>
+      <canvas id="htCvs" width="64" height="64"></canvas>
     </a-assets>
 
     <!-- 塗り壁 -->
     <a-entity id="wall"
-      geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:32;segmentsHeight:32"
-      material="src:#wallCanvas;shader:standard;roughness:0.95;metalness:0;"
+      geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:24;segmentsHeight:24"
+      material="src:#wCvs;shader:standard;roughness:0.95;metalness:0;"
       position="0 1.3 -0.7"></a-entity>
 
-    <!-- 塗り厚マップ壁 (塗り壁の右隣に配置) -->
+    <!-- 塗り厚マップ壁 (右隣) -->
     <a-entity id="heatWall"
       geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:1;segmentsHeight:1"
-      material="src:#heatCanvas;shader:flat;"
-      position="1.5 1.3 -0.7">
-    </a-entity>
-
-    <!-- 厚みマップ壁のラベル -->
-    <a-text value="塗り厚マップ" position="1.5 1.85 -0.7"
-            align="center" color="#fff" width="2.0"
-            geometry="primitive:plane;width:0.8;height:0.12"
-            material="color:#000;opacity:0.6"></a-text>
+      material="src:#hCvs;shader:flat;"
+      position="1.5 1.3 -0.7"></a-entity>
+    <a-text value="塗り厚マップ" position="1.5 1.88 -0.7" align="center" color="#fff" width="1.8"></a-text>
 
     <!-- HUD -->
-    <a-entity position="-0.95 1.85 -0.55" rotation="0 35 0">
-      <a-plane width="0.72" height="0.50" color="#000" opacity="0.68"></a-plane>
-      <a-text value="施工状況"   position="0 0.20 0.01" align="center" color="#fff"    width="1.4"></a-text>
-      <a-text id="hudCoverage"  value="塗布率 ░░░░░░░░  0%"  position="0 0.09 0.01" align="center" color="#9F9"    width="1.4"></a-text>
-      <a-text id="hudHawk"      value="鏝板  ████████ 100%" position="0 0.00 0.01" align="center" color="#FFD080" width="1.4"></a-text>
-      <a-text id="hudTrowel"    value="鏝の泥 ░░░░░░░░  0%"  position="0 -0.09 0.01" align="center" color="#80DFFF" width="1.4"></a-text>
-      <a-text id="hudMessage"   value=""                     position="0 -0.18 0.01" align="center" color="#FFD700" width="1.2" wrap-count="22"></a-text>
+    <a-entity position="-0.95 1.80 -0.55" rotation="0 35 0">
+      <a-plane width="0.65" height="0.42" color="#000" opacity="0.70"></a-plane>
+      <a-text id="hCov" value="塗布率: 0%"       position="0  0.14 0.01" align="center" color="#9F9"    width="1.3"></a-text>
+      <a-text id="hHwk" value="鏝板: 100%"       position="0  0.04 0.01" align="center" color="#FFD080" width="1.3"></a-text>
+      <a-text id="hTrw" value="鏝の泥: 0%"       position="0 -0.06 0.01" align="center" color="#80DFFF" width="1.3"></a-text>
+      <a-text id="hMsg" value=""                  position="0 -0.16 0.01" align="center" color="#FFD700" width="1.2" wrap-count="20"></a-text>
     </a-entity>
 
     <!-- ボタン -->
-    <a-entity position="-0.95 1.48 -0.55" rotation="0 35 0">
-      <a-box id="resetBtn" position="-0.16 0 0" width="0.26" height="0.11" depth="0.04" color="#a44"></a-box>
-      <a-text value="リセット" position="-0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
-      <a-box id="gradeBtn"  position="0.16 0 0" width="0.26" height="0.11" depth="0.04" color="#4a4"></a-box>
-      <a-text value="採点"   position="0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
+    <a-entity position="-0.95 1.44 -0.55" rotation="0 35 0">
+      <a-box id="resetBtn" position="-0.15 0 0" width="0.24" height="0.10" depth="0.04" color="#a44"></a-box>
+      <a-text value="リセット" position="-0.15 0 0.03" align="center" color="#fff" width="1.3"></a-text>
+      <a-box id="gradeBtn" position="0.15 0 0"  width="0.24" height="0.10" depth="0.04" color="#4a4"></a-box>
+      <a-text value="採点" position="0.15 0 0.03" align="center" color="#fff" width="1.3"></a-text>
     </a-entity>
-
-    <!-- 常時チャート -->
-    <a-plane id="chartPanel" width="0.80" height="0.50"
-             position="-0.95 1.14 -0.55" rotation="0 35 0"
-             material="src:#chartCanvas;shader:flat;transparent:true;"></a-plane>
-
-    <!-- 操作説明 -->
-    <a-plane width="0.68" height="0.60" position="0.95 1.65 -0.60" rotation="0 -30 0"
-             material="src:#opsCanvas;transparent:true;shader:flat;"></a-plane>
 
     <!-- 右手 -->
     <a-entity id="rightHand" oculus-touch-controls="hand:right;model:false" trowel>
-      <a-sphere position="0 -0.080 0" radius="0.018" color="#C4A068" material="roughness:0.75;"></a-sphere>
-      <a-cylinder position="0 -0.0175 0" radius="0.015" height="0.125" color="#D8BC84" material="roughness:0.70;"></a-cylinder>
-      <a-cylinder position="0 0.045 0" radius="0.013" height="0.008" color="#7A7A7A" material="metalness:0.7;roughness:0.4;"></a-cylinder>
-      <a-cylinder position="0 0 -0.020" radius="0.007" height="0.040" rotation="90 0 0" color="#888888" material="metalness:0.80;roughness:0.28;"></a-cylinder>
+      <a-sphere position="0 -0.080 0" radius="0.018" color="#C4A068"></a-sphere>
+      <a-cylinder position="0 -0.018 0" radius="0.015" height="0.125" color="#D8BC84"></a-cylinder>
+      <a-cylinder position="0 0 -0.020" radius="0.007" height="0.040" rotation="90 0 0" color="#888"></a-cylinder>
       <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
-      <a-box id="trowelMortarViz" position="0 0.035 -0.046" width="0.080" height="0.198" depth="0.006" color="#828278"
+      <a-box id="tMV" position="0 0.035 -0.046" width="0.080" height="0.198" depth="0.006" color="#828278"
              material="roughness:0.9;metalness:0;opacity:0;transparent:true;"></a-box>
     </a-entity>
 
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
               raycaster="objects:#resetBtn,#gradeBtn;far:3;lineColor:#fff;lineOpacity:0.4">
-      <a-box position="0 0.005 -0.15" width="0.30" height="0.007" depth="0.30" color="#A08860" material="roughness:0.85;"></a-box>
-      <a-cylinder position="0 -0.065 -0.15" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
-      <a-sphere id="hawkMortarViz" position="0 0.022 -0.15" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
+      <a-box position="0 0.005 -0.15" width="0.28" height="0.007" depth="0.28" color="#A08860"></a-box>
+      <a-cylinder position="0 -0.06 -0.15" radius="0.015" height="0.11" color="#6B4226"></a-cylinder>
+      <a-sphere id="hMV" position="0 0.020 -0.15" scale="0.20 0.04 0.20" color="#828278"></a-sphere>
     </a-entity>
 
     <a-light type="ambient" intensity="0.70"></a-light>
-    <a-light type="directional" intensity="0.90" position="1 2 1"></a-light>
+    <a-light type="directional" intensity="0.85" position="1 2 1"></a-light>
   </a-scene>
 
   <script>
-  /* === WebXR === */
-  const statusEl=document.getElementById('status');
-  const enterARBtn=document.getElementById('enterAR');
-  const sceneEl=document.querySelector('a-scene');
-  let arSupported=false;
-  async function checkAR(){
-    if(!navigator.xr){statusEl.textContent='✗ 非対応';return;}
+  /* WebXR */
+  const stEl=document.getElementById('st'),btnEl=document.getElementById('btn'),sc=document.querySelector('a-scene');
+  let arOK=false;
+  (async()=>{
+    if(!navigator.xr){stEl.textContent='✗ 非対応';return;}
     try{
-      arSupported=await navigator.xr.isSessionSupported('immersive-ar');
-      const vrOK=await navigator.xr.isSessionSupported('immersive-vr');
-      if(arSupported){statusEl.textContent='✓ AR対応';enterARBtn.textContent='Enter AR';enterARBtn.disabled=false;}
-      else if(vrOK){statusEl.textContent='⚠ VRのみ';enterARBtn.textContent='Enter VR';enterARBtn.disabled=false;}
-      else statusEl.textContent='✗ 非対応';
-    }catch(e){statusEl.textContent='エラー';}
-  }
-  checkAR();
-  const UI=['enterAR','status','info','version'];
-  enterARBtn.addEventListener('click',()=>{
-    sound.init();
-    if(arSupported) sceneEl.enterAR(); else sceneEl.enterVR();
-  });
-  sceneEl.addEventListener('enter-vr',()=>UI.forEach(id=>document.getElementById(id).style.display='none'));
-  sceneEl.addEventListener('exit-vr', ()=>UI.forEach(id=>document.getElementById(id).style.display='block'));
-
-  /* === ハプティクス === */
-  window._rightGP=null;
-  function haptic(intensity,ms){
-    try{
-      if(window._rightGP?.hapticActuators?.length>0){
-        window._rightGP.hapticActuators[0].pulse(intensity,ms);
-      }
+      arOK=await navigator.xr.isSessionSupported('immersive-ar');
+      const vr=await navigator.xr.isSessionSupported('immersive-vr');
+      if(arOK){stEl.textContent='✓ AR';btnEl.textContent='Enter AR';btnEl.disabled=false;}
+      else if(vr){stEl.textContent='⚠ VR';btnEl.textContent='Enter VR';btnEl.disabled=false;}
     }catch(e){}
-  }
+  })();
+  btnEl.addEventListener('click',()=>{snd.init();arOK?sc.enterAR():sc.enterVR();});
+  const UI=['btn','st','ui','ver'];
+  sc.addEventListener('enter-vr',()=>UI.forEach(id=>document.getElementById(id).style.display='none'));
+  sc.addEventListener('exit-vr', ()=>UI.forEach(id=>document.getElementById(id).style.display='block'));
 
-  /* === モルタル === */
-  let hawkMortar=100, trowelMortar=0;
-  const TROWEL_MAX=60, KOTE_AMOUNT=50, SCOOP_DIST=0.22, PAINT_COST=0.35;
-  let lastCenterUV=null;
-  function makeBar(v,max,len=8){const n=Math.round(Math.max(0,Math.min(v/max,1))*len);return'█'.repeat(n)+'░'.repeat(len-n);}
-  function updateMortarVisuals(){
-    const hv=document.getElementById('hawkMortarViz');
-    if(hv){const r=Math.max(0.02,hawkMortar/100);hv.setAttribute('scale',`${r*0.22} ${r*0.05} ${r*0.22}`);}
-    const tv=document.getElementById('trowelMortarViz');
-    if(tv){const r=trowelMortar/TROWEL_MAX;tv.setAttribute('material',`color:#828278;roughness:0.9;metalness:0;opacity:${(r*0.92).toFixed(2)};transparent:true`);}
-    document.getElementById('hudHawk').setAttribute('value',`鏝板  ${makeBar(hawkMortar,100)} ${Math.floor(hawkMortar)}%`);
-    document.getElementById('hudTrowel').setAttribute('value',`鏝の泥 ${makeBar(trowelMortar,TROWEL_MAX)} ${Math.floor(trowelMortar/TROWEL_MAX*100)}%`);
-  }
+  /* ハプティクス */
+  window._rgp=null;
+  function haptic(i,ms){try{window._rgp?.hapticActuators?.[0]?.pulse(i,ms);}catch(e){}}
 
-  /* === サウンド (軽量版) === */
-  const sound={
-    ctx:null, noiseBuffer:null, node:null, gainNode:null, filtNode:null, node2:null,
-    init(){
-      if(this.ctx) return;
-      try{
-        this.ctx=new(window.AudioContext||window.webkitAudioContext)();
-        const sr=this.ctx.sampleRate;
-        const buf=this.ctx.createBuffer(1,sr,sr); // 1秒に削減
-        const d=buf.getChannelData(0);
-        for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
-        this.noiseBuffer=buf;
-      }catch(e){}
-    },
-    startScraping(speed){
-      if(!this.ctx||!this.noiseBuffer) return; this.stopScraping();
-      const src=this.ctx.createBufferSource(); src.buffer=this.noiseBuffer; src.loop=true;
-      this.filtNode=this.ctx.createBiquadFilter(); this.filtNode.type='bandpass';
-      this.filtNode.frequency.value=200+Math.min(speed,20)*80; this.filtNode.Q.value=4;
-      this.gainNode=this.ctx.createGain(); this.gainNode.gain.setValueAtTime(0,this.ctx.currentTime);
-      this.gainNode.gain.linearRampToValueAtTime(0.10,this.ctx.currentTime+0.05);
-      src.connect(this.filtNode); this.filtNode.connect(this.gainNode); this.gainNode.connect(this.ctx.destination);
-      src.start(); this.node=src;
-    },
-    updateScraping(speed){
-      if(!this.filtNode) return;
-      this.filtNode.frequency.setTargetAtTime(200+Math.min(speed,20)*80,this.ctx.currentTime,0.06);
-    },
-    stopScraping(){
-      if(!this.node) return;
-      try{this.gainNode.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
-        const n=this.node; setTimeout(()=>{try{n.stop();}catch(e){}},200);}catch(e){}
-      this.node=null;this.gainNode=null;this.filtNode=null;
-    },
-    playKoteGaeshi(){
-      if(!this.ctx||!this.noiseBuffer) return;
-      const src=this.ctx.createBufferSource(); src.buffer=this.noiseBuffer;
-      const f=this.ctx.createBiquadFilter(); f.type='lowpass';
+  /* モルタル */
+  let hawkMortar=100,trowelMortar=0,lastUV=null;
+  const TMAX=60,PCOST=0.35;
+  function updMortar(){
+    const hv=document.getElementById('hMV');
+    if(hv){const r=Math.max(0.01,hawkMortar/100);hv.setAttribute('scale',`${r*0.2} ${r*0.04} ${r*0.2}`);}
+    const tv=document.getElementById('tMV');
+    if(tv){const r=trowelMortar/TMAX;tv.setAttribute('material',`color:#828278;roughness:0.9;metalness:0;opacity:${(r*0.9).toFixed(2)};transparent:true`);}
+    document.getElementById('hHwk').setAttribute('value',`鏝板: ${Math.floor(hawkMortar)}%`);
+    document.getElementById('hTrw').setAttribute('value',`鏝の泥: ${Math.floor(trowelMortar/TMAX*100)}%`);
+  }
+  let msgT=null;
+  function setMsg(m){document.getElementById('hMsg').setAttribute('value',m);clearTimeout(msgT);msgT=setTimeout(()=>document.getElementById('hMsg').setAttribute('value',''),4000);}
+
+  /* サウンド */
+  const snd={ctx:null,nb:null,nd:null,gn:null,fn:null,
+    init(){if(this.ctx)return;try{this.ctx=new(window.AudioContext||window.webkitAudioContext)();
+      const sr=this.ctx.sampleRate,b=this.ctx.createBuffer(1,sr,sr),d=b.getChannelData(0);
+      for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;this.nb=b;}catch(e){}},
+    start(spd){if(!this.ctx||!this.nb)return;this.stop();
+      const s=this.ctx.createBufferSource();s.buffer=this.nb;s.loop=true;
+      this.fn=this.ctx.createBiquadFilter();this.fn.type='bandpass';
+      this.fn.frequency.value=200+Math.min(spd,20)*80;this.fn.Q.value=4;
+      this.gn=this.ctx.createGain();this.gn.gain.setValueAtTime(0,this.ctx.currentTime);
+      this.gn.gain.linearRampToValueAtTime(0.10,this.ctx.currentTime+0.05);
+      s.connect(this.fn);this.fn.connect(this.gn);this.gn.connect(this.ctx.destination);
+      s.start();this.nd=s;},
+    upd(spd){if(!this.fn)return;this.fn.frequency.setTargetAtTime(200+Math.min(spd,20)*80,this.ctx.currentTime,0.06);},
+    stop(){if(!this.nd)return;try{this.gn.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
+      const n=this.nd;setTimeout(()=>{try{n.stop();}catch(e){}},200);}catch(e){}this.nd=this.gn=this.fn=null;},
+    playKG(){if(!this.ctx||!this.nb)return;
+      const s=this.ctx.createBufferSource();s.buffer=this.nb;
+      const f=this.ctx.createBiquadFilter();f.type='lowpass';
       f.frequency.setValueAtTime(600,this.ctx.currentTime);
       f.frequency.exponentialRampToValueAtTime(80,this.ctx.currentTime+0.22);
-      const g=this.ctx.createGain(); g.gain.setValueAtTime(0.6,this.ctx.currentTime);
+      const g=this.ctx.createGain();g.gain.setValueAtTime(0.6,this.ctx.currentTime);
       g.gain.exponentialRampToValueAtTime(0.001,this.ctx.currentTime+0.30);
-      src.connect(f);f.connect(g);g.connect(this.ctx.destination);
-      src.start();src.stop(this.ctx.currentTime+0.32);
-    }
+      s.connect(f);f.connect(g);g.connect(this.ctx.destination);s.start();s.stop(this.ctx.currentTime+0.32);}
   };
 
-  /* === ペインター === */
-  const W=256,H=256,HW=64,HH=64;
-  const wallCvs=document.getElementById('wallCanvas');
-  const wCtx=wallCvs.getContext('2d');
-  const htCvs=document.getElementById('htCanvas');
-  const hCtx=htCvs.getContext('2d');
+  /* Canvas */
+  const W=128,H=128,HW=32,HH=32; // 最小解像度
+  const wCvs=document.getElementById('wCvs'),wCtx=wCvs.getContext('2d');
+  const hCvs=document.getElementById('hCvs'),hCtx2=hCvs.getContext('2d');
+  const htCvs=document.getElementById('htCvs'),htCtx=htCvs.getContext('2d');
+  let colorTex=null,heightTex=null,heatTex=null;
+  let heightData=new Float32Array(HW*HH);
+  let thickMap=new Uint8Array(W*H);
 
-  function createPainter(){
-    const p={W,H,HW,HH,
-      colorTex:null, heightTex:null,
-      heightData:new Float32Array(HW*HH),
-      thicknessMap:new Uint8Array(W*H),
-      lastCenterUV:null,
-      htImgData:hCtx.createImageData(HW,HH)
-    };
-    drawBase(wCtx,W,H);
-    hCtx.fillStyle='#000';hCtx.fillRect(0,0,HW,HH);
-    return p;
-  }
-
-  function drawBase(ctx,w,h){
-    ctx.fillStyle='#B8B4AE';ctx.fillRect(0,0,w,h);
-    for(let i=0;i<600;i++){  // 6000→600
-      const x=Math.random()*w,y=Math.random()*h,r=Math.random()*3+0.5;
-      const v=Math.floor(140+Math.random()*60);
-      ctx.fillStyle=`rgba(${v},${v-3},${v-6},${0.2+Math.random()*0.3})`;
-      ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+  function drawBase(){
+    wCtx.fillStyle='#B8B4AE';wCtx.fillRect(0,0,W,H);
+    for(let i=0;i<300;i++){
+      const x=Math.random()*W,y=Math.random()*H,r=Math.random()*2.5+0.5;
+      const v=Math.floor(140+Math.random()*55);
+      wCtx.fillStyle=`rgba(${v},${v-3},${v-6},${0.2+Math.random()*0.3})`;
+      wCtx.beginPath();wCtx.arc(x,y,r,0,Math.PI*2);wCtx.fill();
     }
+    if(colorTex)colorTex.needsUpdate=true;
   }
 
-  function resetPainter(p){
-    p.thicknessMap=new Uint8Array(W*H);
-    p.heightData=new Float32Array(HW*HH);
-    drawBase(wCtx,W,H);
-    hCtx.fillStyle='#000';hCtx.fillRect(0,0,HW,HH);
-    p.lastCenterUV=null;
-    if(p.colorTex) p.colorTex.needsUpdate=true;
-    if(p.heightTex) p.heightTex.needsUpdate=true;
-    updateCoverage(p); drawChart(p);
-    if(typeof updateHeatWall==='function') updateHeatWall(p);
+  function resetAll(){
+    thickMap=new Uint8Array(W*H);heightData=new Float32Array(HW*HH);lastUV=null;
+    drawBase();
+    htCtx.fillStyle='#000';htCtx.fillRect(0,0,HW,HH);
+    if(heightTex)heightTex.needsUpdate=true;
+    // ヒートマップも初期化
+    hCtx2.fillStyle='#B4B0AA';hCtx2.fillRect(0,0,HW,HH);
+    if(heatTex)heatTex.needsUpdate=true;
+    updCov();
   }
 
-  const staticPainter=createPainter();
-
-  sceneEl.addEventListener('loaded',()=>{
-    const wallEl=document.getElementById('wall');
-    const mesh=wallEl.getObject3D('mesh'); if(!mesh) return;
-    staticPainter.colorTex=new THREE.CanvasTexture(wallCvs);
-    mesh.material.map=staticPainter.colorTex;
-    staticPainter.heightTex=new THREE.CanvasTexture(htCvs);
-    mesh.material.displacementMap=staticPainter.heightTex;
-    mesh.material.displacementScale=0.014;
-    mesh.material.needsUpdate=true;
-
-    /* 塗り厚マップ壁のテクスチャをセット */
-    const heatCvs=document.getElementById('heatCanvas');
-    staticPainter.heatTex=new THREE.CanvasTexture(heatCvs);
-    const heatWallEl=document.getElementById('heatWall');
-    if(heatWallEl){
-      const hm=heatWallEl.getObject3D('mesh');
-      if(hm){hm.material.map=staticPainter.heatTex;hm.material.needsUpdate=true;}
+  sc.addEventListener('loaded',()=>{
+    const wm=document.getElementById('wall').getObject3D('mesh');
+    if(wm){
+      colorTex=new THREE.CanvasTexture(wCvs);wm.material.map=colorTex;
+      heightTex=new THREE.CanvasTexture(htCvs);
+      wm.material.displacementMap=heightTex;wm.material.displacementScale=0.014;
+      wm.material.needsUpdate=true;
     }
-    updateHeatWall(staticPainter); // 初期描画(グレー)
-
-    const chartTex=new THREE.CanvasTexture(document.getElementById('chartCanvas'));
-    const cp=document.getElementById('chartPanel');
-    if(cp){const m=cp.getObject3D('mesh');if(m){m.material.map=chartTex;m.material.needsUpdate=true;staticPainter.chartTex=chartTex;}}
-    drawChart(null);
-    drawOpsCanvas();
+    const hm=document.getElementById('heatWall').getObject3D('mesh');
+    if(hm){heatTex=new THREE.CanvasTexture(hCvs);hm.material.map=heatTex;hm.material.needsUpdate=true;}
+    drawBase();
+    hCtx2.fillStyle='#B4B0AA';hCtx2.fillRect(0,0,HW,HH);
   });
 
-  function markDirty(p){if(p.colorTex)p.colorTex.needsUpdate=true;}
-  function markHDirty(p){
-    const d=p.htImgData.data;
-    for(let i=0;i<p.heightData.length;i++){
-      const v=Math.min(255,Math.floor(Math.max(0,p.heightData[i])/10*255));
-      d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255;
+  /* 塗り厚マップ更新 (32×32 = 1024ピクセルのみ) */
+  const HMIN=1.5,HMAX=5.0,HFAT=9.0;
+  function updHeat(){
+    const img=hCtx2.createImageData(HW,HH),d=img.data;
+    for(let i=0;i<HW*HH;i++){
+      const h=heightData[i];
+      let r,g,b;
+      if(h<0.08){r=180;g=178;b=174;}
+      else if(h<HMIN){const t=h/HMIN;r=30;g=80+Math.floor(90*t);b=230;}
+      else if(h<=HMAX){const t=(h-HMIN)/(HMAX-HMIN);r=30+Math.floor(70*t);g=210;b=40;}
+      else if(h<=HFAT){const t=(h-HMAX)/(HFAT-HMAX);r=225+Math.floor(30*t);g=Math.floor(180*(1-t*0.6));b=10;}
+      else{r=255;g=15;b=10;}
+      d[i*4]=r;d[i*4+1]=g;d[i*4+2]=b;d[i*4+3]=255;
     }
-    hCtx.putImageData(p.htImgData,0,0);
-    if(p.heightTex) p.heightTex.needsUpdate=true;
+    hCtx2.putImageData(img,0,0);
+    if(heatTex)heatTex.needsUpdate=true;
   }
 
-  /* === 塗り厚マップ壁の描画 ===
-     heightData の値を色にマッピングして隣の壁に表示
-     灰=未塗 / 青=薄 / 緑=適正 / 橙=厚め / 赤=厚すぎ  */
-  const HEAT_MIN_OK=1.5, HEAT_MAX_OK=5.0, HEAT_TOO_FAT=9.0;
-
-  function updateHeatWall(p){
-    const hc=document.getElementById('heatCanvas');
-    if(!hc) return;
-    const hx=hc.getContext('2d');
-    const HW2=hc.width, HH2=hc.height;
-    const img=hx.createImageData(HW2,HH2);
-    const d=img.data;
-
-    for(let y=0;y<HH2;y++){
-      for(let x=0;x<HW2;x++){
-        /* heatCanvas(192×160) → heightData(64×64) にマッピング */
-        const px=Math.floor(x/HW2*HW);
-        const py=Math.floor(y/HH2*HH);
-        const h=p.heightData[py*HW+px];
-        let r,g,b;
-        if(h<0.08){r=180;g=178;b=174;}          // 未塗: グレー
-        else if(h<HEAT_MIN_OK){                  // 薄すぎ: 青
-          const t=h/HEAT_MIN_OK;
-          r=30;g=80+Math.floor(90*t);b=230;
-        } else if(h<=HEAT_MAX_OK){               // 適正: 緑
-          const t=(h-HEAT_MIN_OK)/(HEAT_MAX_OK-HEAT_MIN_OK);
-          r=30+Math.floor(70*t);g=210;b=40;
-        } else if(h<=HEAT_TOO_FAT){              // 厚め: 橙
-          const t=(h-HEAT_MAX_OK)/(HEAT_TOO_FAT-HEAT_MAX_OK);
-          r=225+Math.floor(30*t);g=Math.floor(180*(1-t*0.6));b=10;
-        } else{r=255;g=15;b=10;}                 // 厚すぎ: 赤
-        const i=(y*HW2+x)*4;
-        d[i]=r;d[i+1]=g;d[i+2]=b;d[i+3]=255;
-      }
-    }
-    hx.putImageData(img,0,0);
-
-    /* 凡例を下部に描画 */
-    hx.fillStyle='rgba(0,0,0,0.55)';
-    hx.fillRect(0,HH2-22,HW2,22);
-    hx.font='12px sans-serif';hx.textAlign='left';
-    const leg=[{c:'#aaa',t:'未塗'},{c:'#3366ff',t:'薄い'},{c:'#22cc44',t:'適正'},{c:'#ffaa00',t:'厚め'},{c:'#ff2222',t:'厚すぎ'}];
-    leg.forEach((l,i)=>{
-      hx.fillStyle=l.c;hx.fillRect(4+i*36,HH2-16,10,10);
-      hx.fillStyle='#fff';hx.fillText(l.t,16+i*36,HH2-6);
-    });
-
-    if(p.heatTex) p.heatTex.needsUpdate=true;
-  }
-
-  /* === 塗り === */
+  /* 塗り */
   const MR=82,MG=80,MB=75;
-  function paintSurface(p,uvHits){
-    if(uvHits.length<2||trowelMortar<=0) return;
-    const ctx=wCtx;
-    const pts=uvHits.map(uv=>({x:uv.x*W,y:(1-uv.y)*H}));
-    const first=pts[0],last=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)];
-    const midUV=uvHits[Math.floor(uvHits.length/2)];
-    const bdx=last.x-first.x,bdy=last.y-first.y;
-    const bladeLen=Math.sqrt(bdx*bdx+bdy*bdy),bladeAngle=Math.atan2(bdy,bdx);
-    let speed=0;
-    if(p.lastCenterUV){const mdx=(midUV.x-p.lastCenterUV.x)*W,mdy=-(midUV.y-p.lastCenterUV.y)*H;speed=Math.sqrt(mdx*mdx+mdy*mdy);}
-    p.lastCenterUV={x:midUV.x,y:midUV.y};
-    const speedThin=Math.max(0,Math.min(1,speed/18));
-    const sf=(0.25+Math.random()*0.75)*(1-speedThin*0.55);
-    const sw=28+Math.min(speed*1.2,16); // strokeW削減
-    const intensity=Math.min(1,trowelMortar/(TROWEL_MAX*0.25));
-    const cr=Math.round(MR-sf*18),cg=Math.round(MG-sf*16),cb=Math.round(MB-sf*14);
-    for(const pt of pts){
-      const a=(0.78*intensity*sf).toFixed(2);
-      const g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,sw);
+  function paint(uvs){
+    if(uvs.length<2||trowelMortar<=0)return;
+    const pts=uvs.map(u=>({x:u.x*W,y:(1-u.y)*H}));
+    const mid=pts[Math.floor(pts.length/2)],muv=uvs[Math.floor(uvs.length/2)];
+    const f=pts[0],l=pts[pts.length-1];
+    const bdx=l.x-f.x,bdy=l.y-f.y,ba=Math.atan2(bdy,bdx),hl=Math.sqrt(bdx*bdx+bdy*bdy)/2;
+    let spd=0;
+    if(lastUV){const dx=(muv.x-lastUV.x)*W,dy=-(muv.y-lastUV.y)*H;spd=Math.sqrt(dx*dx+dy*dy);}
+    lastUV={x:muv.x,y:muv.y};
+    const sf=(0.3+Math.random()*0.7)*(1-Math.max(0,Math.min(1,spd/18))*0.5);
+    const sw=24+Math.min(spd*1.0,14);
+    const it=Math.min(1,trowelMortar/(TMAX*0.25));
+    const cr=Math.round(MR-sf*16),cg=Math.round(MG-sf*14),cb=Math.round(MB-sf*12);
+    for(const p of pts){
+      const a=(0.75*it*sf).toFixed(2);
+      const g=wCtx.createRadialGradient(p.x,p.y,0,p.x,p.y,sw);
       g.addColorStop(0,`rgba(${cr},${cg},${cb},${a})`);
-      g.addColorStop(0.65,`rgba(${cr+8},${cg+6},${cb+4},${(a*0.65).toFixed(2)})`);
+      g.addColorStop(0.7,`rgba(${cr+8},${cg+6},${cb+4},${(a*0.5).toFixed(2)})`);
       g.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);
-      ctx.fillStyle=g;ctx.beginPath();ctx.arc(pt.x,pt.y,sw,0,Math.PI*2);ctx.fill();
+      wCtx.fillStyle=g;wCtx.beginPath();wCtx.arc(p.x,p.y,sw,0,Math.PI*2);wCtx.fill();
     }
-    const hb=bladeLen/2;
-    ctx.save();ctx.translate(mid.x,mid.y);ctx.rotate(bladeAngle);
-    ctx.strokeStyle=`rgba(${MR+25},${MG+22},${MB+20},${(0.45*intensity*sf).toFixed(2)})`;
-    ctx.lineWidth=1.2;
-    [-1,1].forEach(s=>{ctx.beginPath();ctx.moveTo(-hb*0.9,s*sw*0.8);ctx.lineTo(hb*0.9,s*sw*0.8);ctx.stroke();});
-    ctx.restore();
-    // 粒感: 25粒に削減
-    for(let i=0;i<25;i++){
-      const pt2=pts[Math.min(Math.floor(Math.random()*pts.length),pts.length-1)];
-      const gx=pt2.x+(Math.random()-0.5)*sw*2.2,gy=pt2.y+(Math.random()-0.5)*sw*2.2;
-      const v=Math.floor(70+Math.random()*40);
-      ctx.fillStyle=`rgba(${v},${v-2},${v-4},${((0.3+Math.random()*0.4)*intensity*sf).toFixed(2)})`;
-      ctx.beginPath();ctx.arc(gx,gy,Math.random()*2.5+0.5,0,Math.PI*2);ctx.fill();
+    // 鏝跡ライン
+    wCtx.save();wCtx.translate(mid.x,mid.y);wCtx.rotate(ba);
+    wCtx.strokeStyle=`rgba(${MR+22},${MG+20},${MB+18},${(0.4*it*sf).toFixed(2)})`;
+    wCtx.lineWidth=1.0;
+    [-1,1].forEach(s=>{wCtx.beginPath();wCtx.moveTo(-hl*0.9,s*sw*0.8);wCtx.lineTo(hl*0.9,s*sw*0.8);wCtx.stroke();});
+    // 鏝波 (軽量版: 5本のみ)
+    const spacing=10,num=Math.ceil(sw*2/spacing);
+    for(let i=-Math.floor(num/2);i<=Math.floor(num/2);i++){
+      const yo=i*spacing,ef=1-Math.abs(yo)/(sw*1.1);if(ef<=0)continue;
+      const amp=3.0*Math.pow(ef,0.6),al=(0.30*ef*it).toFixed(3);
+      wCtx.strokeStyle=`rgba(${i%2===0?52:172},${i%2===0?49:166},${i%2===0?43:158},${al})`;
+      wCtx.lineWidth=0.6+1.2*ef;
+      wCtx.beginPath();
+      const steps=8,blen=hl*2;
+      for(let s=0;s<=steps;s++){
+        const x=-hl+s*(blen/steps),w=Math.sin(x*0.06+i)*amp;
+        s===0?wCtx.moveTo(x,yo+w):wCtx.lineTo(x,yo+w);
+      }
+      wCtx.stroke();
     }
-    // 鏝波 (間引き)
-    drawKoteNami(ctx,mid,hb,bladeAngle,sw,intensity*sf,'paint');
-    markDirty(p);
-    // ハイト (間引きループ)
-    paintHeight(p,uvHits,sf);
-    updateHeatWall(p);
-    trowelMortar=Math.max(0,trowelMortar-PAINT_COST);
-    if(trowelMortar===0) setMessage('泥切れ。コテ返しを');
-    updateMortarVisuals();
-    updateCoverage(p);
-    drawChart(p);
-  }
-
-  function smoothSurface(p,uvHits){
-    if(uvHits.length<2) return;
-    const ctx=wCtx;
-    const pts=uvHits.map(uv=>({x:uv.x*W,y:(1-uv.y)*H}));
-    const first=pts[0],last=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)];
-    const bdx=last.x-first.x,bdy=last.y-first.y;
-    const bladeLen=Math.sqrt(bdx*bdx+bdy*bdy),bladeAngle=Math.atan2(bdy,bdx);
-    const sw=36;
-    for(const pt of pts){
-      const g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,sw);
-      g.addColorStop(0,'rgba(100,101,98,0.68)');g.addColorStop(0.5,'rgba(95,96,93,0.45)');g.addColorStop(1,'rgba(90,91,88,0)');
-      ctx.fillStyle=g;ctx.beginPath();ctx.arc(pt.x,pt.y,sw,0,Math.PI*2);ctx.fill();
+    wCtx.restore();
+    // 粒感: 12粒
+    for(let i=0;i<12;i++){
+      const p2=pts[Math.floor(Math.random()*pts.length)];
+      const gx=p2.x+(Math.random()-0.5)*sw*2,gy=p2.y+(Math.random()-0.5)*sw*2;
+      const v=Math.floor(65+Math.random()*35);
+      wCtx.fillStyle=`rgba(${v},${v-2},${v-4},${(0.3+Math.random()*0.4).toFixed(2)})`;
+      wCtx.beginPath();wCtx.arc(gx,gy,Math.random()*2+0.5,0,Math.PI*2);wCtx.fill();
     }
-    ctx.save();ctx.translate(mid.x,mid.y);ctx.rotate(bladeAngle);
-    const shine=ctx.createLinearGradient(-bladeLen/2*0.8,0,bladeLen/2*0.8,0);
-    shine.addColorStop(0,'rgba(130,131,128,0)');shine.addColorStop(0.5,'rgba(135,136,133,0.22)');shine.addColorStop(1,'rgba(130,131,128,0)');
-    ctx.fillStyle=shine;ctx.beginPath();ctx.ellipse(0,0,bladeLen/2*0.8,sw*0.2,0,0,Math.PI*2);ctx.fill();
-    ctx.restore();
-    drawKoteNami(ctx,mid,bladeLen/2,bladeAngle,sw,0.45,'smooth');
-    markDirty(p);
-    smoothHeight(p,uvHits);
-    updateHeatWall(p);
-    drawChart(p);
-  }
-
-  /* === ハイトマップ (ループ間引き) === */
-  function paintHeight(p,uvHits,sf=1){
+    if(colorTex)colorTex.needsUpdate=true;
+    // ハイト (4px間引き)
     const r=Math.round(HW*0.084/1.2*0.65);
-    for(const uv of uvHits){
+    for(const uv of uvs){
       const cx=Math.floor(uv.x*HW),cy=Math.floor((1-uv.y)*HH);
-      for(let y=Math.max(0,cy-r);y<Math.min(HH,cy+r+1);y+=2){ // y+=2で間引き
-        for(let x=Math.max(0,cx-r);x<Math.min(HW,cx+r+1);x+=2){
+      for(let y=Math.max(0,cy-r);y<Math.min(HH,cy+r+1);y+=3)
+        for(let x=Math.max(0,cx-r);x<Math.min(HW,cx+r+1);x+=3){
           const d=Math.sqrt((x-cx)**2+(y-cy)**2);if(d>r)continue;
           const ef=d<r*0.75?1:1-(d-r*0.75)/(r*0.25);
-          p.heightData[y*HW+x]+=ef*sf*0.55;
+          heightData[y*HW+x]+=ef*sf*0.55;
         }
-      }
     }
-    markHDirty(p);
+    const hi=htCtx.createImageData(HW,HH),hd=hi.data;
+    for(let i=0;i<heightData.length;i++){const v=Math.min(255,Math.floor(Math.max(0,heightData[i])/10*255));hd[i*4]=hd[i*4+1]=hd[i*4+2]=v;hd[i*4+3]=255;}
+    htCtx.putImageData(hi,0,0);if(heightTex)heightTex.needsUpdate=true;
+    // ヒートマップ更新
+    updHeat();
+    trowelMortar=Math.max(0,trowelMortar-PCOST);
+    if(trowelMortar===0)setMsg('泥切れ。コテ返しを');
+    updMortar();updCov();
   }
-  function smoothHeight(p,uvHits){
+
+  /* 均し */
+  function smooth(uvs){
+    if(uvs.length<2)return;
+    const pts=uvs.map(u=>({x:u.x*W,y:(1-u.y)*H}));
+    const sw=32;
+    for(const p of pts){
+      const g=wCtx.createRadialGradient(p.x,p.y,0,p.x,p.y,sw);
+      g.addColorStop(0,'rgba(100,101,98,0.65)');g.addColorStop(0.5,'rgba(95,96,93,0.40)');g.addColorStop(1,'rgba(90,91,88,0)');
+      wCtx.fillStyle=g;wCtx.beginPath();wCtx.arc(p.x,p.y,sw,0,Math.PI*2);wCtx.fill();
+    }
+    if(colorTex)colorTex.needsUpdate=true;
     const r=Math.round(HW*0.084/1.2*0.8);
-    for(const uv of uvHits){
+    for(const uv of uvs){
       const cx=Math.floor(uv.x*HW),cy=Math.floor((1-uv.y)*HH);
-      for(let y=Math.max(0,cy-r);y<Math.min(HH,cy+r+1);y+=2){
-        for(let x=Math.max(0,cx-r);x<Math.min(HW,cx+r+1);x+=2){
+      for(let y=Math.max(0,cy-r);y<Math.min(HH,cy+r+1);y+=3)
+        for(let x=Math.max(0,cx-r);x<Math.min(HW,cx+r+1);x+=3){
           const d=Math.sqrt((x-cx)**2+(y-cy)**2);if(d>r)continue;
-          const idx=y*HW+x;
-          const mn=p.heightData[idx]*0.55;
-          p.heightData[idx]=Math.max(mn,p.heightData[idx]-(1-d/r)*0.12);
+          const idx=y*HW+x,mn=heightData[idx]*0.55;
+          heightData[idx]=Math.max(mn,heightData[idx]-(1-d/r)*0.12);
         }
-      }
     }
-    markHDirty(p);
+    const hi=htCtx.createImageData(HW,HH),hd=hi.data;
+    for(let i=0;i<heightData.length;i++){const v=Math.min(255,Math.floor(Math.max(0,heightData[i])/10*255));hd[i*4]=hd[i*4+1]=hd[i*4+2]=v;hd[i*4+3]=255;}
+    htCtx.putImageData(hi,0,0);if(heightTex)heightTex.needsUpdate=true;
+    updHeat();
   }
 
-  /* === 鏝波 (簡略版) === */
-  function drawKoteNami(ctx,mid,hb,angle,sw,intensity,type){
-    const isPaint=type==='paint';
-    const spacing=isPaint?9:18,freq=isPaint?0.055:0.03;
-    const num=Math.ceil((sw*2)/spacing)+1;
-    const len=hb*2,STEPS=Math.max(10,Math.ceil(len/8)); // STEPSを半分
-    ctx.save();ctx.translate(mid.x,mid.y);ctx.rotate(angle);
-    for(let i=-Math.floor(num/2);i<=Math.floor(num/2);i++){
-      const yOff=i*spacing,ef=1-Math.abs(yOff)/(sw*1.1);if(ef<=0)continue;
-      const amp=Math.pow(Math.cos(Math.abs(yOff)/sw*Math.PI*0.5),0.6)*(isPaint?3.5:1.5);
-      const alpha=(isPaint?0.35:0.16)*ef*Math.min(1,intensity);
-      const isDark=(i%2===0);
-      ctx.strokeStyle=`rgba(${isDark?52:175},${isDark?49:168},${isDark?43:160},${alpha.toFixed(3)})`;
-      ctx.lineWidth=isPaint?(0.7+1.4*Math.pow(ef,0.6)):(0.5+0.8*ef);
-      ctx.beginPath();
-      for(let s=0;s<=STEPS;s++){
-        const x=-hb+s*(len/STEPS);
-        const w=Math.sin(x*freq+i*1.1)*amp;
-        if(s===0)ctx.moveTo(x,yOff+w);else ctx.lineTo(x,yOff+w);
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
+  function updCov(){
+    let p=0;for(let i=0;i<thickMap.length;i++)if(thickMap[i]>0)p++;
+    document.getElementById('hCov').setAttribute('value',`塗布率: ${(p/thickMap.length*100).toFixed(0)}%`);
   }
 
-  /* === チャート (常時表示) === */
-  const HEAT_MIN_OK=1.5,HEAT_MAX_OK=5.0,HEAT_TOO_FAT=9.0;
-  function drawChart(p){
-    const cc=document.getElementById('chartCanvas');
-    const ctx=cc.getContext('2d');
-    const CW=cc.width,CH=cc.height;
-    ctx.clearRect(0,0,CW,CH);
-    ctx.fillStyle='rgba(10,10,10,0.80)';
-    ctx.beginPath();ctx.roundRect(0,0,CW,CH,14);ctx.fill();
-
-    let cntU=0,cntT=0,cntO=0,cntY=0,cntK=0,sumH=0,maxH=0,total=1;
-    if(p){
-      total=HW*HH;
-      for(let i=0;i<total;i++){
-        const h=p.heightData[i];
-        if(h<0.08)cntU++;else if(h<HEAT_MIN_OK)cntT++;else if(h<=HEAT_MAX_OK)cntO++;else if(h<=HEAT_TOO_FAT)cntY++;else cntK++;
-        sumH+=h;if(h>maxH)maxH=h;
-      }
-    }else{cntU=1;}
-    const painted=total-cntU,avgH=painted>0?sumH/painted:0;
-    const okR=painted>0?cntO/painted:0,covR=painted/total;
-    const score=Math.round(covR*okR*100);
-    const scoreLabel=score>=80?'◎ 優秀':score>=60?'○ 良好':score>=40?'△ 要改善':'✕ 要やり直し';
-
-    /* タイトル */
-    ctx.font='bold 20px sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';
-    ctx.fillText('塗り厚 分布',CW/2,22);
-
-    /* 積み上げバー */
-    const BX=16,BY=30,BW=CW-32,BH=38;
-    const zones=[
-      {cnt:cntU,color:'#666'},{cnt:cntT,color:'#3366ff'},
-      {cnt:cntO,color:'#22cc44'},{cnt:cntY,color:'#ffaa00'},{cnt:cntK,color:'#ff2222'}
-    ];
-    let ox=BX;
-    for(const z of zones){
-      const w=Math.max(0,(z.cnt/total)*BW);
-      ctx.fillStyle=z.color;ctx.fillRect(ox,BY,w,BH);ox+=w;
-    }
-    ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;ctx.strokeRect(BX,BY,BW,BH);
-
-    /* 凡例 */
-    ctx.font='14px sans-serif';ctx.textAlign='left';
-    const lbls=[{c:'#666',t:'未塗'},{c:'#3366ff',t:'薄い'},{c:'#22cc44',t:'適正'},{c:'#ffaa00',t:'厚め'},{c:'#ff2222',t:'厚すぎ'}];
-    const cnts=[cntU,cntT,cntO,cntY,cntK];
-    let lx=BX;
-    lbls.forEach((l,i)=>{
-      ctx.fillStyle=l.c;ctx.fillRect(lx,74,10,10);
-      ctx.fillStyle='#ccc';ctx.fillText(`${l.t} ${(cnts[i]/total*100).toFixed(0)}%`,lx+12,84);
-      lx+=74;
-    });
-
-    /* 数値 */
-    ctx.font='14px sans-serif';
-    const rows=[
-      {l:'塗布率',v:`${(covR*100).toFixed(1)}%`,c:'#9F9'},
-      {l:'適正率',v:`${(okR*100).toFixed(1)}%`,c:'#9F9'},
-      {l:'平均厚',v:avgH.toFixed(2),c:'#FFD080'},
-      {l:'最大厚',v:maxH.toFixed(2),c:'#FFD080'},
-    ];
-    rows.forEach((r,i)=>{
-      const rx=BX+(i%2)*180,ry=106+Math.floor(i/2)*24;
-      ctx.fillStyle='#888';ctx.fillText(r.l+':',rx,ry);
-      ctx.fillStyle=r.c;ctx.font='bold 14px sans-serif';ctx.fillText(r.v,rx+54,ry);ctx.font='14px sans-serif';
-    });
-
-    /* スコア */
-    const sc2=score>=80?'#44ff44':score>=60?'#ffee00':score>=40?'#ff8800':'#ff3333';
-    ctx.fillStyle=sc2;ctx.font='bold 18px sans-serif';ctx.textAlign='center';
-    ctx.fillText(`${scoreLabel}  ${score}点`,CW/2,156);
-
-    if(staticPainter.chartTex) staticPainter.chartTex.needsUpdate=true;
-  }
-
-  /* === HUD === */
-  function updateCoverage(p){
-    let painted=0;
-    for(let i=0;i<p.thicknessMap.length;i++) if(p.thicknessMap[i]>0) painted++;
-    document.getElementById('hudCoverage')
-      .setAttribute('value',`塗布率 ${makeBar(painted,p.thicknessMap.length)} ${(painted/p.thicknessMap.length*100).toFixed(0)}%`);
-  }
-  let msgTimer=null;
-  function setMessage(msg){
-    document.getElementById('hudMessage').setAttribute('value',msg);
-    clearTimeout(msgTimer);msgTimer=setTimeout(()=>document.getElementById('hudMessage').setAttribute('value',''),4000);
-  }
-
-  document.getElementById('resetBtn').addEventListener('click',()=>{resetPainter(staticPainter);setMessage('リセットしました');});
+  document.getElementById('resetBtn').addEventListener('click',()=>{resetAll();setMsg('リセット');});
   document.getElementById('gradeBtn').addEventListener('click',()=>{
-    const p=staticPainter;
-    let painted=0,target=0;
-    for(let i=0;i<p.thicknessMap.length;i++){const t=p.thicknessMap[i];if(t>0)painted++;if(t>=2&&t<=5)target++;}
-    const cov=(painted/p.thicknessMap.length*100).toFixed(0);
-    const uni=painted>0?(target/painted*100).toFixed(0):0;
-    setMessage(`塗布率 ${cov}% / 適正 ${uni}%`);
+    let p=0,ok=0,total=HW*HH;
+    for(let i=0;i<total;i++){const h=heightData[i];if(h>0.08)p++;if(h>=HMIN&&h<=HMAX)ok++;}
+    const cov=(p/total*100).toFixed(0),uni=p>0?(ok/p*100).toFixed(0):0;
+    const sc2=Math.round(p/total*ok/Math.max(p,1)*100);
+    const lb=sc2>=80?'◎優秀':sc2>=60?'○良好':sc2>=40?'△要改善':'✕要やり直し';
+    setMsg(`塗布 ${cov}% / 適正 ${uni}% / ${lb}`);
   });
 
-  /* === 操作説明 === */
-  function drawOpsCanvas(){
-    const c=document.getElementById('opsCanvas');
-    const c2=c.getContext('2d');const CW=c.width,CH=c.height;
-    c2.fillStyle='rgba(0,0,0,0.78)';c2.beginPath();c2.roundRect(0,0,CW,CH,24);c2.fill();
-    c2.font='bold 36px sans-serif';c2.fillStyle='#fff';c2.textAlign='center';c2.fillText('操作方法',CW/2,50);
-    c2.strokeStyle='rgba(255,255,255,0.2)';c2.lineWidth=1.5;c2.beginPath();c2.moveTo(30,65);c2.lineTo(CW-30,65);c2.stroke();
-    const items=[
-      {l:'Ⓐ',d:'壁を設置',c:'#80EFFF'},
-      {l:'左G',d:'鏝板を補充',c:'#FFD080'},
-      {l:'鏝板+ひねり',d:'コテ返し',c:'#88FF88'},
-      {l:'壁+材料あり',d:'塗る',c:'#88FF88'},
-      {l:'壁+材料なし',d:'均す',c:'#FFB060'},
-      {l:'左レーザー',d:'採点/リセット',c:'#ddd'},
-    ];
-    c2.textAlign='left';
-    items.forEach((it,i)=>{
-      const y=100+i*50;
-      c2.font='bold 26px sans-serif';c2.fillStyle=it.c;c2.fillText(it.l,30,y);
-      c2.fillStyle='rgba(255,255,255,0.3)';c2.fillText(':',190,y);
-      c2.font='26px sans-serif';c2.fillStyle='#fff';c2.fillText(it.d,210,y);
-    });
-  }
-
-  updateMortarVisuals();
+  updMortar();
   </script>
 </body>
 </html>
