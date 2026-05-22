@@ -117,7 +117,7 @@
         mat = new THREE.MeshStandardMaterial({
           map: painter.colorTex,
           displacementMap: painter.heightTex,
-          displacementScale: 0.006,
+          displacementScale: 0.014,
           roughness: 0.95, transparent: true, opacity: 0.88,
           side: THREE.DoubleSide
         });
@@ -397,7 +397,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v3.9</div>
+  <div id="version">v4.0</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     鏝板に近づき手首をひねる → コテ返し<br>
@@ -572,7 +572,7 @@
     const heightTex = new THREE.CanvasTexture(staticPainter.heightCanvas);
     staticPainter.heightTex = heightTex;
     mesh.material.displacementMap   = heightTex;
-    mesh.material.displacementScale = 0.006;
+    mesh.material.displacementScale = 0.014;
     mesh.material.displacementBias  = 0;
     mesh.material.needsUpdate = true;
 
@@ -976,15 +976,22 @@
     renderHeight(p);
   }
 
-  function _smoothHeight(p,uvHits){
-    const r=Math.round(p.HW*0.084/1.2*0.8);
-    for(const uv of uvHits){
-      const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
-      for(let y=Math.max(0,cy-r);y<Math.min(p.HH,cy+r+1);y++){
-        for(let x=Math.max(0,cx-r);x<Math.min(p.HW,cx+r+1);x++){
-          const dist=Math.sqrt((x-cx)**2+(y-cy)**2); if(dist>r) continue;
-          const idx=y*p.HW+x;
-          p.heightData[idx]=Math.max(0,p.heightData[idx]-(1-dist/r)*0.35);
+  function _smoothHeight(p, uvHits) {
+    const r = Math.round(p.HW * 0.084 / 1.2 * 0.8);
+    for (const uv of uvHits) {
+      const cx = Math.floor(uv.x * p.HW);
+      const cy = Math.floor((1 - uv.y) * p.HH);
+      for (let y = Math.max(0, cy-r); y < Math.min(p.HH, cy+r+1); y++) {
+        for (let x = Math.max(0, cx-r); x < Math.min(p.HW, cx+r+1); x++) {
+          const dist = Math.sqrt((x-cx)**2 + (y-cy)**2);
+          if (dist > r) continue;
+          const idx = y * p.HW + x;
+          /* ★ 削り量を小さく (0.35→0.12) かつ最小厚みを保持 */
+          const minHeight = p.heightData[idx] * 0.55; // 現在値の55%以下にはならない
+          p.heightData[idx] = Math.max(
+            minHeight,
+            p.heightData[idx] - (1 - dist/r) * 0.12
+          );
         }
       }
     }
