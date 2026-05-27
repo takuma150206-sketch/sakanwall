@@ -2,13 +2,12 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 四面出隅</title>
+  <title>左官MR練習 - 四辺出隅</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
-  /* ---------- 刃の形状 ---------- */
-  AFRAME.registerComponent('blade-shape', {
-    init: function () {
+  AFRAME.registerComponent('blade-shape',{
+    init:function(){
       const hw=0.042,RECT=0.200,TOTAL=0.240,D=0.0025;
       const bot=-TOTAL/2,rTop=bot+RECT,tip=bot+TOTAL;
       const sh=new THREE.Shape();
@@ -20,10 +19,9 @@
     }
   });
 
-  /* ---------- 鏝コンポーネント ---------- */
   AFRAME.registerComponent('trowel',{
     init:function(){
-      this.lastTick=0;this.covCount=0;this.wasContact=false;this.mouseDown=false;
+      this.lastTick=0;this.wasContact=false;this.mouseDown=false;
       this.hawkEntryQuat=null;this.hawkMaxAngle=0;this.koteGaeshiDone=false;
       this._lastPos=new THREE.Vector3();this.currentSpeed=0;
       this.threeRC=new THREE.Raycaster();this.threeRC.far=0.08;
@@ -33,21 +31,26 @@
       this._wp=new THREE.Vector3();this._fwd=new THREE.Vector3();
       this._tp=new THREE.Vector3();this._hp=new THREE.Vector3();this._bc=new THREE.Vector3();
 
+      /* Ⓐ: 部屋を手元に設置 */
       this.el.addEventListener('abuttondown',()=>{
         const o=this.el.object3D;if(!o)return;
         o.getWorldPosition(this._tp);
-        /* 全壁を中央からオフセットして再配置 */
         const cx=+this._tp.x.toFixed(3),cz=+(this._tp.z).toFixed(3);
-        const R=0.75;
-        WALL_DEFS.forEach((def,i)=>{
-          const el=document.getElementById(`wall${i}`);
-          if(el) el.setAttribute('position',{
-            x:cx+def.ox*R, y:1.3, z:cz+def.oz*R
-          });
-        });
-        updateEdges(cx,cz,R);
+        const Z=-0.70, HW=0.60, HH=0.50, D=0.25;
+        // メイン壁
+        document.getElementById('wallMain').setAttribute('position',{x:cx,y:1.3,z:cz+Z});
+        // 左ウィング (x=-HW, 手前に突き出す)
+        document.getElementById('wallL').setAttribute('position',{x:cx-HW,y:1.3,z:cz+Z+D/2});
+        // 右ウィング
+        document.getElementById('wallR').setAttribute('position',{x:cx+HW,y:1.3,z:cz+Z+D/2});
+        // 上ウィング (y=1.3+HH, 手前に突き出す)
+        document.getElementById('wallT').setAttribute('position',{x:cx,y:1.3+HH,z:cz+Z+D/2});
+        // 下ウィング
+        document.getElementById('wallB').setAttribute('position',{x:cx,y:1.3-HH,z:cz+Z+D/2});
+        // 出隅ライン更新
+        updateEdges(cx,cz+Z,HW,HH);
         painters.forEach(p=>resetPainter(p));
-        setMessage('部屋を設置しました ✓');
+        setMessage('壁を設置しました ✓');
       });
 
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
@@ -74,16 +77,11 @@
       if(lh?.object3D){
         this._hp.set(0,0.012,-0.15).applyMatrix4(lh.object3D.matrixWorld);
         this._bc.set(0,0.015,-0.042).applyMatrix4(o.matrixWorld);
-        const dist=this._bc.distanceTo(this._hp);
-        if(dist<0.22){
-          if(!this.hawkEntryQuat){
-            this.hawkEntryQuat=o.quaternion.clone();this.hawkMaxAngle=0;
-            if(hawkMortar>0)setMessage('手首をひねってコテ返し！');
-          }
+        if(this._bc.distanceTo(this._hp)<0.22){
+          if(!this.hawkEntryQuat){this.hawkEntryQuat=o.quaternion.clone();this.hawkMaxAngle=0;if(hawkMortar>0)setMessage('手首をひねってコテ返し！');}
           this.hawkMaxAngle=Math.max(this.hawkMaxAngle,o.quaternion.angleTo(this.hawkEntryQuat));
           if(this.hawkMaxAngle>Math.PI*0.22&&hawkMortar>0){
-            const amt=Math.min(50,hawkMortar);
-            hawkMortar=Math.max(0,hawkMortar-amt);
+            const amt=Math.min(50,hawkMortar);hawkMortar=Math.max(0,hawkMortar-amt);
             trowelMortar=Math.min(78,trowelMortar+amt);
             this.koteGaeshiDone=true;this.hawkEntryQuat=null;this.hawkMaxAngle=0;
             updateMortarVisuals();setMessage('コテ返し ✓');haptic(0.55,150);sound.playKG();
@@ -93,14 +91,15 @@
       if(!isXR&&!this.mouseDown){lastCenterUV=null;this.wasContact=false;return;}
       this._fwd.set(0,0,-1).transformDirection(o.matrixWorld);
 
-      /* 4枚の壁から最初にヒットした壁を探す */
-      let hitEl=null,hitPainter=null;
-      for(let i=0;i<4;i++){
-        const el=document.getElementById(`wall${i}`);if(!el)continue;
+      /* 全面でレイキャスト */
+      const WALL_IDS=['wallMain','wallL','wallR','wallT','wallB'];
+      let hitEl=null,hitPainterIdx=0;
+      for(let i=0;i<WALL_IDS.length;i++){
+        const el=document.getElementById(WALL_IDS[i]);if(!el)continue;
         const mesh=el.getObject3D('mesh');if(!mesh)continue;
         this._wp.copy(this.bpts[4]).applyMatrix4(o.matrixWorld);
         this.threeRC.set(this._wp,this._fwd);
-        if(this.threeRC.intersectObject(mesh,true).length){hitEl=el;hitPainter=painters[i];break;}
+        if(this.threeRC.intersectObject(mesh,true).length){hitEl=el;hitPainterIdx=i;break;}
       }
       if(!hitEl){
         if(this.wasContact)sound.stopScraping();
@@ -117,12 +116,11 @@
       if(uvHits.length<2){lastCenterUV=null;this.wasContact=false;return;}
       if(!this.wasContact){haptic(0.65,55);sound.startScraping(this.currentSpeed);this.wasContact=true;}
       else sound.updateScraping(this.currentSpeed);
-      const p=hitPainter;
+      const p=painters[hitPainterIdx];
       if(trowelMortar<=0){smoothSurface(p,uvHits);haptic(0.08,20);}
       else{
         if(!this.koteGaeshiDone){setMessage('コテ返しで材料を取ってください');return;}
         paintSurface(p,uvHits);haptic(0.13,20);
-        if(++this.covCount>=10){this.covCount=0;}
       }
     }
   });
@@ -141,14 +139,13 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.3</div>
+  <div id="version">v4.5</div>
   <div id="info">
-    <strong>左官MR練習 - 四面出隅</strong><br>
-    Ⓐ 部屋を手元に設置<br>
+    <strong>左官MR練習 - 四辺出隅</strong><br>
+    Ⓐ 壁を手元に設置<br>
     左グリップ: 鏝板を補充<br>
     鏝板+ひねり → コテ返し<br>
-    材料あり → 塗る / なし → 均す<br>
-    4面の壁を自由に練習
+    材料あり → 塗る / なし → 均す
   </div>
   <button id="enterAR" disabled>確認中...</button>
   <div id="status">WebXR 確認中...</div>
@@ -157,45 +154,83 @@
            webxr="optionalFeatures:hit-test,local-floor,anchors;"
            renderer="colorManagement:true;antialias:true;alpha:true;">
     <a-assets>
-      <canvas id="c0" width="512" height="512"></canvas>
-      <canvas id="c1" width="512" height="512"></canvas>
-      <canvas id="c2" width="512" height="512"></canvas>
-      <canvas id="c3" width="512" height="512"></canvas>
+      <!-- メイン壁 + 左右上下ウィング = 5枚 -->
+      <canvas id="c0" width="512" height="512"></canvas><!-- main -->
+      <canvas id="c1" width="128" height="512"></canvas><!-- L -->
+      <canvas id="c2" width="128" height="512"></canvas><!-- R -->
+      <canvas id="c3" width="512" height="128"></canvas><!-- T -->
+      <canvas id="c4" width="512" height="128"></canvas><!-- B -->
       <canvas id="h0" width="128" height="128"></canvas>
-      <canvas id="h1" width="128" height="128"></canvas>
-      <canvas id="h2" width="128" height="128"></canvas>
-      <canvas id="h3" width="128" height="128"></canvas>
+      <canvas id="h1" width="32"  height="128"></canvas>
+      <canvas id="h2" width="32"  height="128"></canvas>
+      <canvas id="h3" width="128" height="32"></canvas>
+      <canvas id="h4" width="128" height="32"></canvas>
       <canvas id="opsCanvas" width="512" height="512"></canvas>
     </a-assets>
 
     <!--
-      四方の壁 (出隅ルーム)
-      ユーザーを中心に半径0.75mの正方形
-      前(South): z=-0.75  後(North): z=+0.75
-      右(East) : x=+0.75  左(West) : x=-0.75
-      各コーナーが出隅
+      メイン壁: 1.2m × 1.0m (正面)
+      ウィング深さ: 0.25m (出隅の奥行き)
+
+      構造:
+        [上ウィング 1.2×0.25] ─ y=1.80, z=-0.575
+        [左ウィング 0.25×1.0] ─ x=-0.60, z=-0.575
+        [メイン壁  1.2×1.0]  ─ z=-0.70
+        [右ウィング 0.25×1.0] ─ x=+0.60, z=-0.575
+        [下ウィング 1.2×0.25] ─ y=0.80,  z=-0.575
     -->
-    <a-entity id="wall0" geometry="primitive:plane;width:1.5;height:1.0;segmentsWidth:48;segmentsHeight:32"
-      material="shader:standard;roughness:0.95;metalness:0;" position="0 1.3 -0.75" rotation="0 0 0"></a-entity>
-    <a-entity id="wall1" geometry="primitive:plane;width:1.5;height:1.0;segmentsWidth:48;segmentsHeight:32"
-      material="shader:standard;roughness:0.95;metalness:0;" position="0.75 1.3 0" rotation="0 -90 0"></a-entity>
-    <a-entity id="wall2" geometry="primitive:plane;width:1.5;height:1.0;segmentsWidth:48;segmentsHeight:32"
-      material="shader:standard;roughness:0.95;metalness:0;" position="0 1.3 0.75" rotation="0 180 0"></a-entity>
-    <a-entity id="wall3" geometry="primitive:plane;width:1.5;height:1.0;segmentsWidth:48;segmentsHeight:32"
-      material="shader:standard;roughness:0.95;metalness:0;" position="-0.75 1.3 0" rotation="0 90 0"></a-entity>
 
-    <!-- 出隅の接合ライン (4本) -->
-    <a-box id="edge0" position=" 0.75 1.3 -0.75" width="0.012" height="1.0" depth="0.012" color="#ccc"></a-box>
-    <a-box id="edge1" position=" 0.75 1.3  0.75" width="0.012" height="1.0" depth="0.012" color="#ccc"></a-box>
-    <a-box id="edge2" position="-0.75 1.3  0.75" width="0.012" height="1.0" depth="0.012" color="#ccc"></a-box>
-    <a-box id="edge3" position="-0.75 1.3 -0.75" width="0.012" height="1.0" depth="0.012" color="#ccc"></a-box>
+    <!-- メイン壁 -->
+    <a-entity id="wallMain"
+      geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:48;segmentsHeight:40"
+      material="shader:standard;roughness:0.95;metalness:0;"
+      position="0 1.3 -0.70"></a-entity>
 
-    <!-- 床 (薄いグレー) -->
-    <a-plane position="0 0.80 0" rotation="-90 0 0" width="1.5" height="1.5"
-             color="#C8C4BC" opacity="0.4"></a-plane>
+    <!-- 左ウィング (出隅: 左辺) -->
+    <a-entity id="wallL"
+      geometry="primitive:plane;width:0.25;height:1.0;segmentsWidth:16;segmentsHeight:40"
+      material="shader:standard;roughness:0.95;metalness:0;"
+      position="-0.60 1.3 -0.575" rotation="0 -90 0"></a-entity>
+
+    <!-- 右ウィング (出隅: 右辺) -->
+    <a-entity id="wallR"
+      geometry="primitive:plane;width:0.25;height:1.0;segmentsWidth:16;segmentsHeight:40"
+      material="shader:standard;roughness:0.95;metalness:0;"
+      position="0.60 1.3 -0.575" rotation="0 90 0"></a-entity>
+
+    <!-- 上ウィング (出隅: 上辺) -->
+    <a-entity id="wallT"
+      geometry="primitive:plane;width:1.2;height:0.25;segmentsWidth:48;segmentsHeight:16"
+      material="shader:standard;roughness:0.95;metalness:0;"
+      position="0 1.80 -0.575" rotation="-90 0 0"></a-entity>
+
+    <!-- 下ウィング (出隅: 下辺) -->
+    <a-entity id="wallB"
+      geometry="primitive:plane;width:1.2;height:0.25;segmentsWidth:48;segmentsHeight:16"
+      material="shader:standard;roughness:0.95;metalness:0;"
+      position="0 0.80 -0.575" rotation="90 0 0"></a-entity>
+
+    <!-- 出隅ライン (4辺×2本 = 8本、白い細線で角を強調) -->
+    <!-- 左辺の出隅 (上/下) -->
+    <a-box id="eL0" position="-0.60 1.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
+    <a-box id="eL1" position="-0.60 0.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
+    <!-- 右辺の出隅 (上/下) -->
+    <a-box id="eR0" position=" 0.60 1.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
+    <a-box id="eR1" position=" 0.60 0.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
+    <!-- 上辺の縦ライン -->
+    <a-box id="eT0" position="-0.60 1.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eT1" position=" 0.60 1.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
+    <!-- 下辺の縦ライン -->
+    <a-box id="eB0" position="-0.60 0.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eB1" position=" 0.60 0.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
+    <!-- メイン壁の4辺ライン -->
+    <a-box id="eML" position="-0.60 1.3 -0.70" width="0.010" height="1.0" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eMR" position=" 0.60 1.3 -0.70" width="0.010" height="1.0" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eMT" position="0 1.80 -0.70" width="1.2" height="0.010" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eMB" position="0 0.80 -0.70" width="1.2" height="0.010" depth="0.010" color="#ddd"></a-box>
 
     <!-- HUD -->
-    <a-entity position="-1.05 1.92 -0.55" rotation="0 35 0">
+    <a-entity position="-1.0 1.92 -0.55" rotation="0 35 0">
       <a-plane width="0.75" height="0.56" color="#000" opacity="0.68"></a-plane>
       <a-text value="施工状況"  position="0  0.23 0.01" align="center" color="#fff"    width="1.5"></a-text>
       <a-text id="hudCoverage" value="塗布率 ░░░░░░░░  0%"  position="0  0.12 0.01" align="center" color="#9F9"    width="1.4"></a-text>
@@ -205,7 +240,7 @@
     </a-entity>
 
     <!-- ボタン -->
-    <a-entity position="-1.05 1.44 -0.55" rotation="0 35 0">
+    <a-entity position="-1.0 1.44 -0.55" rotation="0 35 0">
       <a-box id="resetBtn" position="-0.16 0 0" width="0.26" height="0.12" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="-0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
       <a-box id="gradeBtn"  position="0.16 0 0"  width="0.26" height="0.12" depth="0.04" color="#4a4"></a-box>
@@ -213,7 +248,7 @@
     </a-entity>
 
     <!-- 操作説明 -->
-    <a-plane width="0.68" height="0.60" position="0.95 1.65 -0.60" rotation="0 -30 0"
+    <a-plane width="0.68" height="0.55" position="0.95 1.65 -0.60" rotation="0 -30 0"
              material="src:#opsCanvas;transparent:true;shader:flat;"></a-plane>
 
     <!-- 右手 -->
@@ -221,7 +256,7 @@
       <a-sphere position="0 -0.080 0" radius="0.018" color="#C4A068" material="roughness:0.75;"></a-sphere>
       <a-cylinder position="0 -0.0175 0" radius="0.015" height="0.125" color="#D8BC84" material="roughness:0.70;"></a-cylinder>
       <a-cylinder position="0 0.045 0" radius="0.013" height="0.008" color="#7A7A7A" material="metalness:0.7;roughness:0.4;"></a-cylinder>
-      <a-cylinder position="0 0 -0.020" radius="0.007" height="0.040" rotation="90 0 0" color="#888888" material="metalness:0.80;roughness:0.28;"></a-cylinder>
+      <a-cylinder position="0 0 -0.020" radius="0.007" height="0.040" rotation="90 0 0" color="#888" material="metalness:0.80;roughness:0.28;"></a-cylinder>
       <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
       <a-box id="trowelMortarViz" position="0 0.035 -0.046" width="0.080" height="0.198" depth="0.006" color="#828278"
              material="roughness:0.9;metalness:0;opacity:0;transparent:true;"></a-box>
@@ -241,7 +276,7 @@
   </a-scene>
 
   <script>
-  /* === WebXR === */
+  /* WebXR */
   const statusEl=document.getElementById('status'),enterARBtn=document.getElementById('enterAR'),sceneEl=document.querySelector('a-scene');
   let arSupported=false;
   (async()=>{
@@ -259,11 +294,11 @@
   sceneEl.addEventListener('enter-vr',()=>UI.forEach(id=>document.getElementById(id).style.display='none'));
   sceneEl.addEventListener('exit-vr', ()=>UI.forEach(id=>document.getElementById(id).style.display='block'));
 
-  /* === ハプティクス === */
+  /* ハプティクス */
   window._rgp=null;
   function haptic(i,ms){try{window._rgp?.hapticActuators?.[0]?.pulse(i,ms);}catch(e){}}
 
-  /* === モルタル === */
+  /* モルタル */
   let hawkMortar=100,trowelMortar=0,lastCenterUV=null;
   const TROWEL_MAX=60,PAINT_COST=0.35;
   function makeBar(v,max,len=8){const n=Math.round(Math.max(0,Math.min(v/max,1))*len);return'█'.repeat(n)+'░'.repeat(len-n);}
@@ -276,7 +311,7 @@
     document.getElementById('hudTrowel').setAttribute('value',`鏝の泥 ${makeBar(trowelMortar,TROWEL_MAX)} ${Math.floor(trowelMortar/TROWEL_MAX*100)}%`);
   }
 
-  /* === サウンド === */
+  /* サウンド */
   const sound={ctx:null,nb:null,nd:null,nd2:null,gn:null,fn:null,
     init(){if(this.ctx)return;try{this.ctx=new(window.AudioContext||window.webkitAudioContext)();
       const sr=this.ctx.sampleRate,b=this.ctx.createBuffer(1,sr,sr),d=b.getChannelData(0);
@@ -292,8 +327,7 @@
       this.gn.gain.linearRampToValueAtTime(0.12,this.ctx.currentTime+0.05);
       s.connect(this.fn);this.fn.connect(this.gn);s2.connect(lf);lf.connect(lg);lg.connect(this.gn);
       this.gn.connect(this.ctx.destination);s.start();s2.start();this.nd=s;this.nd2=s2;},
-    updateScraping(spd){if(!this.fn)return;
-      this.fn.frequency.setTargetAtTime(200+Math.min(spd,20)*80,this.ctx.currentTime,0.05);},
+    updateScraping(spd){if(!this.fn)return;this.fn.frequency.setTargetAtTime(200+Math.min(spd,20)*80,this.ctx.currentTime,0.05);},
     stopScraping(){if(!this.nd)return;try{this.gn.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
       const n=this.nd,n2=this.nd2;setTimeout(()=>{try{n.stop();}catch(e){}try{n2?.stop();}catch(e){}},200);}catch(e){}
       this.nd=this.nd2=this.gn=this.fn=null;},
@@ -306,78 +340,64 @@
       s.connect(f);f.connect(g);g.connect(this.ctx.destination);s.start(now);s.stop(now+0.35);
       const s2=this.ctx.createBufferSource();s2.buffer=this.nb;
       const f2=this.ctx.createBiquadFilter();f2.type='bandpass';f2.frequency.value=2200;f2.Q.value=2;
-      const g2=this.ctx.createGain();g2.gain.setValueAtTime(0.40,now);g2.gain.exponentialRampToValueAtTime(0.001,now+0.07);
+      const g2=this.ctx.createGain();g2.gain.setValueAtTime(0.40,now);g2.gain.exponentialRampToValueAtTime(0.001,now+0.09);
       s2.connect(f2);f2.connect(g2);g2.connect(this.ctx.destination);s2.start(now);s2.stop(now+0.09);}
   };
 
-  /* === 壁の定義 (正方形部屋) ===
-     ox/oz: 中心からのオフセット方向 */
-  const WALL_DEFS=[
-    {ox:0,  oz:-1, rot:'0 0 0'},    // 前 (South)
-    {ox:1,  oz:0,  rot:'0 -90 0'},  // 右 (East)
-    {ox:0,  oz:1,  rot:'0 180 0'},  // 後 (North)
-    {ox:-1, oz:0,  rot:'0 90 0'},   // 左 (West)
-  ];
-
-  /* 出隅ラインの位置 (壁の交点) */
-  const EDGE_OFFSETS=[
-    {ox:1, oz:-1},{ox:1, oz:1},{ox:-1, oz:1},{ox:-1, oz:-1}
-  ];
-  function updateEdges(cx,cz,R){
-    EDGE_OFFSETS.forEach((e,i)=>{
-      const el=document.getElementById(`edge${i}`);
-      if(el) el.setAttribute('position',{x:cx+e.ox*R,y:1.3,z:cz+e.oz*R});
-    });
+  /* 出隅ライン更新 */
+  function updateEdges(cx,wz,HW,HH){
+    const Z=wz,DZ=0.25,y1=1.3+HH,y0=1.3-HH;
+    const edges=[
+      {id:'eL0',pos:{x:cx-HW,y:y1,z:Z}},{id:'eL1',pos:{x:cx-HW,y:y0,z:Z}},
+      {id:'eR0',pos:{x:cx+HW,y:y1,z:Z}},{id:'eR1',pos:{x:cx+HW,y:y0,z:Z}},
+      {id:'eT0',pos:{x:cx-HW,y:y1,z:Z+DZ/2}},{id:'eT1',pos:{x:cx+HW,y:y1,z:Z+DZ/2}},
+      {id:'eB0',pos:{x:cx-HW,y:y0,z:Z+DZ/2}},{id:'eB1',pos:{x:cx+HW,y:y0,z:Z+DZ/2}},
+      {id:'eML',pos:{x:cx-HW,y:1.3,z:Z}},{id:'eMR',pos:{x:cx+HW,y:1.3,z:Z}},
+      {id:'eMT',pos:{x:cx,y:y1,z:Z}},{id:'eMB',pos:{x:cx,y:y0,z:Z}},
+    ];
+    edges.forEach(e=>{const el=document.getElementById(e.id);if(el)el.setAttribute('position',e.pos);});
   }
 
-  /* === ペインター === */
-  const W=512,H=512,HW=128,HH=128;
-
+  /* ペインター (5枚: main + L + R + T + B) */
   function createPainter(cvs,hcvs){
     const ctx=cvs.getContext('2d'),hc=hcvs.getContext('2d');
+    const W=cvs.width,H=cvs.height,HW=hcvs.width,HH=hcvs.height;
     return{W,H,HW,HH,ctx,hc,colorTex:null,heightTex:null,
       heightData:new Float32Array(HW*HH),htImgData:hc.createImageData(HW,HH),
       thicknessMap:new Uint8Array(W*H),lastCenterUV:null};
   }
 
-  function drawBase(ctx){
+  function drawBase(ctx,W,H){
     ctx.fillStyle='#B8B4AE';ctx.fillRect(0,0,W,H);
-    for(let i=0;i<2000;i++){
+    const cnt=Math.floor(W*H*0.008);
+    for(let i=0;i<cnt;i++){
       const x=Math.random()*W,y=Math.random()*H,r=Math.random()*3.5+0.5;
       const v=Math.floor(140+Math.random()*60);
       ctx.fillStyle=`rgba(${v},${v-3},${v-6},${0.2+Math.random()*0.3})`;
       ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
     }
-    for(let i=0;i<50;i++){
-      ctx.fillStyle=`rgba(80,78,74,${0.04+Math.random()*0.07})`;
-      ctx.beginPath();ctx.ellipse(Math.random()*W,Math.random()*H,8+Math.random()*25,2+Math.random()*7,Math.random()*Math.PI,0,Math.PI*2);ctx.fill();
-    }
   }
 
   function resetPainter(p){
-    p.thicknessMap=new Uint8Array(W*H);p.heightData=new Float32Array(HW*HH);p.lastCenterUV=null;
-    drawBase(p.ctx);p.hc.fillStyle='#000';p.hc.fillRect(0,0,HW,HH);
+    p.thicknessMap=new Uint8Array(p.W*p.H);p.heightData=new Float32Array(p.HW*p.HH);p.lastCenterUV=null;
+    drawBase(p.ctx,p.W,p.H);p.hc.fillStyle='#000';p.hc.fillRect(0,0,p.HW,p.HH);
     if(p.colorTex)p.colorTex.needsUpdate=true;
     if(p.heightTex)p.heightTex.needsUpdate=true;
   }
 
-  /* 4枚のペインターを生成 */
-  const painters=[
-    createPainter(document.getElementById('c0'),document.getElementById('h0')),
-    createPainter(document.getElementById('c1'),document.getElementById('h1')),
-    createPainter(document.getElementById('c2'),document.getElementById('h2')),
-    createPainter(document.getElementById('c3'),document.getElementById('h3')),
-  ];
+  const WALL_IDS=['wallMain','wallL','wallR','wallT','wallB'];
+  const CVS_IDS =['c0','c1','c2','c3','c4'];
+  const HT_IDS  =['h0','h1','h2','h3','h4'];
+  const painters=WALL_IDS.map((_,i)=>createPainter(document.getElementById(CVS_IDS[i]),document.getElementById(HT_IDS[i])));
 
   sceneEl.addEventListener('loaded',()=>{
     painters.forEach((p,i)=>{
-      drawBase(p.ctx);
-      const wEl=document.getElementById(`wall${i}`);
-      if(!wEl)return;
+      drawBase(p.ctx,p.W,p.H);
+      const wEl=document.getElementById(WALL_IDS[i]);if(!wEl)return;
       const mesh=wEl.getObject3D('mesh');if(!mesh)return;
-      p.colorTex=new THREE.CanvasTexture(document.getElementById(`c${i}`));
+      p.colorTex=new THREE.CanvasTexture(document.getElementById(CVS_IDS[i]));
       mesh.material.map=p.colorTex;
-      p.heightTex=new THREE.CanvasTexture(document.getElementById(`h${i}`));
+      p.heightTex=new THREE.CanvasTexture(document.getElementById(HT_IDS[i]));
       mesh.material.displacementMap=p.heightTex;
       mesh.material.displacementScale=0.014;mesh.material.displacementBias=0;
       mesh.material.needsUpdate=true;
@@ -395,14 +415,13 @@
     p.hc.putImageData(p.htImgData,0,0);if(p.heightTex)p.heightTex.needsUpdate=true;
   }
 
-  /* === 塗り === */
+  /* 塗り */
   const MR=82,MG=80,MB=75;
   function paintSurface(p,uvHits){
     if(uvHits.length<2||trowelMortar<=0)return;
-    const ctx=p.ctx;
+    const ctx=p.ctx,W=p.W,H=p.H;
     const pts=uvHits.map(uv=>({x:uv.x*W,y:(1-uv.y)*H}));
-    const first=pts[0],last=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)];
-    const midUV=uvHits[Math.floor(uvHits.length/2)];
+    const first=pts[0],last=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)],midUV=uvHits[Math.floor(uvHits.length/2)];
     const bdx=last.x-first.x,bdy=last.y-first.y;
     const bladeLen=Math.sqrt(bdx*bdx+bdy*bdy),bladeAngle=Math.atan2(bdy,bdx);
     let speed=0;
@@ -426,48 +445,28 @@
     ctx.lineWidth=1.4;
     [-1,1].forEach(s=>{ctx.beginPath();ctx.moveTo(-hb*0.92,s*sw*0.82);ctx.lineTo(hb*0.92,s*sw*0.82);ctx.stroke();});
     const hi=ctx.createLinearGradient(-hb*0.65,0,hb*0.65,0);
-    hi.addColorStop(0,'rgba(195,192,184,0)');
-    hi.addColorStop(0.35,`rgba(195,192,184,${(0.15*intensity*(1-sf*0.5)).toFixed(2)})`);
-    hi.addColorStop(0.65,`rgba(195,192,184,${(0.15*intensity*(1-sf*0.5)).toFixed(2)})`);
-    hi.addColorStop(1,'rgba(195,192,184,0)');
+    hi.addColorStop(0,'rgba(195,192,184,0)');hi.addColorStop(0.35,`rgba(195,192,184,${(0.14*intensity).toFixed(2)})`);
+    hi.addColorStop(0.65,`rgba(195,192,184,${(0.14*intensity).toFixed(2)})`);hi.addColorStop(1,'rgba(195,192,184,0)');
     ctx.fillStyle=hi;ctx.beginPath();ctx.ellipse(0,0,hb*0.65,sw*0.28,0,0,Math.PI*2);ctx.fill();
     ctx.restore();
-    for(let i=0;i<35;i++){
+    for(let i=0;i<30;i++){
       const pt2=pts[Math.min(Math.floor(Math.random()*pts.length),pts.length-1)];
-      const gx=pt2.x+(Math.random()-0.5)*sw*2.3,gy=pt2.y+(Math.random()-0.5)*sw*2.3;
-      const r2=Math.random()<0.15?Math.random()*4+2:Math.random()*1.8+0.3;
+      const gx=pt2.x+(Math.random()-0.5)*sw*2.2,gy=pt2.y+(Math.random()-0.5)*sw*2.2;
+      const r2=Math.random()<0.15?Math.random()*3.5+2:Math.random()*1.6+0.3;
       const v=Math.floor(60+Math.random()*40);
-      ctx.fillStyle=`rgba(${v},${v-2},${v-4},${((0.28+Math.random()*0.48)*intensity*sf).toFixed(2)})`;
+      ctx.fillStyle=`rgba(${v},${v-2},${v-4},${((0.28+Math.random()*0.45)*intensity*sf).toFixed(2)})`;
       ctx.beginPath();ctx.arc(gx,gy,r2,0,Math.PI*2);ctx.fill();
-    }
-    // 塗りすぎ警告
-    let avgT=0,avgCnt=0;
-    for(const pt of pts){
-      const r=Math.ceil(sw);
-      for(let y=Math.max(0,Math.floor(pt.y-r));y<Math.min(H,Math.ceil(pt.y+r));y++)
-        for(let x=Math.max(0,Math.floor(pt.x-r));x<Math.min(W,Math.ceil(pt.x+r));x++){
-          const d2=(x-pt.x)**2+(y-pt.y)**2;if(d2>r*r)continue;
-          const idx=y*W+x;
-          if(Math.random()<(1-Math.sqrt(d2)/r)*0.22){if(p.thicknessMap[idx]<255)p.thicknessMap[idx]++;}
-          avgT+=p.thicknessMap[idx];avgCnt++;
-        }
-    }
-    if(avgCnt>0&&avgT/avgCnt>5){
-      ctx.save();ctx.translate(mid.x,mid.y);ctx.rotate(bladeAngle);
-      ctx.strokeStyle='rgba(255,80,60,0.55)';ctx.lineWidth=2.5;
-      ctx.beginPath();ctx.ellipse(0,0,hb*0.65,sw*0.65,0,0,Math.PI*2);ctx.stroke();ctx.restore();
     }
     drawKoteNami(ctx,mid,hb,bladeAngle,sw,intensity*sf,'paint');
     markTextureDirty(p);
-    // ハイト
-    const rH=Math.round(HW*0.084/1.2*0.65);
+    const rH=Math.round(p.HW*0.084/1.2*0.65);
     for(const uv of uvHits){
-      const cx=Math.floor(uv.x*HW),cy=Math.floor((1-uv.y)*HH);
-      for(let y=Math.max(0,cy-rH);y<Math.min(HH,cy+rH+1);y+=2)
-        for(let x=Math.max(0,cx-rH);x<Math.min(HW,cx+rH+1);x+=2){
+      const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
+      for(let y=Math.max(0,cy-rH);y<Math.min(p.HH,cy+rH+1);y+=2)
+        for(let x=Math.max(0,cx-rH);x<Math.min(p.HW,cx+rH+1);x+=2){
           const d=Math.sqrt((x-cx)**2+(y-cy)**2);if(d>rH)continue;
           const ef=d<rH*0.75?1:1-(d-rH*0.75)/(rH*0.25);
-          p.heightData[y*HW+x]+=ef*sf*0.55*(0.9+Math.random()*0.2);
+          p.heightData[y*p.HW+x]+=ef*sf*0.55;
         }
     }
     renderHeight(p);
@@ -476,16 +475,29 @@
     updateMortarVisuals();
   }
 
-  /* === 均し === */
+  /* 均し */
   function smoothSurface(p,uvHits){
     if(uvHits.length<2)return;
-    const ctx=p.ctx;
+    const ctx=p.ctx,W=p.W,H=p.H;
     const pts=uvHits.map(uv=>({x:uv.x*W,y:(1-uv.y)*H}));
     const first=pts[0],last=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)];
-    const bdx=last.x-first.x,bdy=last.y-first.y;
-    const bladeLen=Math.sqrt(bdx*bdx+bdy*bdy),bladeAngle=Math.atan2(bdy,bdx);
-    const sw=40,hb=bladeLen/2;
+    const bdx=last.x-first.x,bdy=last.y-first.y,bladeLen=Math.sqrt(bdx*bdx+bdy*bdy),bladeAngle=Math.atan2(bdy,bdx);
+    const sw=36,hb=bladeLen/2;
+
+    /* ★ 塗った場所かどうかを heightData で確認してから描画 */
+    const hasPaint=uvHits.some(uv=>{
+      const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
+      const idx=cy*p.HW+cx;
+      return p.heightData[idx]>0.08;
+    });
+    if(!hasPaint) return; // 未塗りエリアなら何もしない
+
     for(const pt of pts){
+      /* ★ そのピクセルが塗られているかチェック */
+      const px=Math.floor(pt.x/W*p.HW),py=Math.floor(pt.y/H*p.HH);
+      const idx=py*p.HW+px;
+      if(p.heightData[idx]<0.08) continue; // 未塗りはスキップ
+
       const g=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,sw);
       g.addColorStop(0,'rgba(100,101,98,0.72)');g.addColorStop(0.5,'rgba(95,96,93,0.50)');g.addColorStop(1,'rgba(90,91,88,0)');
       ctx.fillStyle=g;ctx.beginPath();ctx.arc(pt.x,pt.y,sw,0,Math.PI*2);ctx.fill();
@@ -494,28 +506,27 @@
     const shine=ctx.createLinearGradient(-hb*0.8,0,hb*0.8,0);
     shine.addColorStop(0,'rgba(130,131,128,0)');shine.addColorStop(0.5,'rgba(135,136,133,0.25)');shine.addColorStop(1,'rgba(130,131,128,0)');
     ctx.fillStyle=shine;ctx.beginPath();ctx.ellipse(0,0,hb*0.8,sw*0.22,0,0,Math.PI*2);ctx.fill();
-    for(let i=0;i<12;i++){
-      const mv=Math.floor(90+Math.random()*20);
-      ctx.fillStyle=`rgba(${mv},${mv},${mv-2},${(0.06+Math.random()*0.09).toFixed(2)})`;
-      ctx.beginPath();ctx.ellipse((Math.random()-0.5)*hb*1.8,(Math.random()-0.5)*sw*1.6,12+Math.random()*20,(12+Math.random()*20)*0.4,Math.random()*Math.PI,0,Math.PI*2);ctx.fill();
-    }
     ctx.restore();
     drawKoteNami(ctx,mid,hb,bladeAngle,sw,0.5,'smooth');
     markTextureDirty(p);
-    const rH=Math.round(HW*0.084/1.2*0.8);
+
+    /* ★ ハイトマップも塗った場所のみ均す */
+    const rH=Math.round(p.HW*0.084/1.2*0.8);
     for(const uv of uvHits){
-      const cx=Math.floor(uv.x*HW),cy=Math.floor((1-uv.y)*HH);
-      for(let y=Math.max(0,cy-rH);y<Math.min(HH,cy+rH+1);y+=2)
-        for(let x=Math.max(0,cx-rH);x<Math.min(HW,cx+rH+1);x+=2){
+      const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
+      for(let y=Math.max(0,cy-rH);y<Math.min(p.HH,cy+rH+1);y+=2)
+        for(let x=Math.max(0,cx-rH);x<Math.min(p.HW,cx+rH+1);x+=2){
           const d=Math.sqrt((x-cx)**2+(y-cy)**2);if(d>rH)continue;
-          const idx=y*HW+x,mn=p.heightData[idx]*0.55;
+          const idx=y*p.HW+x;
+          if(p.heightData[idx]<0.08) continue; // ★ 未塗りはスキップ
+          const mn=p.heightData[idx]*0.55;
           p.heightData[idx]=Math.max(mn,p.heightData[idx]-(1-d/rH)*0.12);
         }
     }
     renderHeight(p);
   }
 
-  /* === 鏝波 === */
+  /* 鏝波 */
   function drawKoteNami(ctx,mid,hb,angle,sw,intensity,type){
     const isPaint=type==='paint',spacing=isPaint?7:15,freq=isPaint?0.055:0.03;
     const num=Math.ceil((sw*2)/spacing)+1,blen=hb*2,STEPS=Math.max(20,Math.ceil(blen/5));
@@ -523,36 +534,21 @@
     for(let i=-Math.floor(num/2);i<=Math.floor(num/2);i++){
       const yo=i*spacing,ef=1-Math.abs(yo)/(sw*1.1);if(ef<=0)continue;
       const amp=Math.pow(Math.cos(Math.abs(yo)/sw*Math.PI*0.5),0.6)*(isPaint?4.2:1.8);
-      const lw=isPaint?(0.7+1.6*Math.pow(ef,0.6)):(0.5+0.9*ef);
       const al=(isPaint?0.40:0.18)*ef*Math.min(1,intensity);
       const isDk=(i%2===0);
       ctx.strokeStyle=`rgba(${isDk?52:178},${isDk?49:172},${isDk?43:164},${al.toFixed(3)})`;
-      ctx.lineWidth=lw;ctx.beginPath();
+      ctx.lineWidth=isPaint?(0.7+1.6*Math.pow(ef,0.6)):(0.5+0.9*ef);
+      ctx.beginPath();
       for(let s=0;s<=STEPS;s++){
         const x=-hb+s*(blen/STEPS);
         const w=Math.sin(x*freq+i*1.1)*amp+Math.sin(x*freq*2.4+i*0.7)*amp*0.28;
         s===0?ctx.moveTo(x,yo+w):ctx.lineTo(x,yo+w);
       }ctx.stroke();
     }
-    const tipSp=isPaint?13:24,tipFreq=isPaint?0.09:0.04,numT=Math.ceil((hb*2)/tipSp)+1,TS=Math.max(12,Math.ceil(sw*2/4));
-    for(let j=-Math.floor(numT/2);j<=Math.floor(numT/2);j++){
-      const yp=j*tipSp,fo=1-Math.abs(yp)/(hb*1.1);if(fo<=0)continue;
-      const as2=Math.pow(Math.cos(Math.abs(yp)/hb*Math.PI*0.48),0.5);
-      const ta=(isPaint?2.2:1.0)*as2,tl=(isPaint?0.7+0.7*as2:0.5+0.4*as2);
-      const al2=(isPaint?0.22:0.10)*fo*Math.min(1,intensity);
-      const isDk=(j%2!==0);
-      ctx.strokeStyle=`rgba(${isDk?48:165},${isDk?46:160},${isDk?40:152},${al2.toFixed(3)})`;
-      ctx.lineWidth=tl;ctx.beginPath();
-      for(let s=0;s<=TS;s++){
-        const x=-sw+s*(sw*2/TS);
-        const w=Math.sin(x*tipFreq+j*0.9)*ta+Math.sin(x*tipFreq*1.8+j*1.3)*ta*0.38;
-        s===0?ctx.moveTo(x,yp+w):ctx.lineTo(x,yp+w);
-      }ctx.stroke();
-    }
     ctx.restore();
   }
 
-  /* === HUD === */
+  /* HUD */
   let msgTimer=null;
   function setMessage(msg){
     document.getElementById('hudMessage').setAttribute('value',msg);
@@ -571,26 +567,26 @@
     setMessage(`塗布率 ${cov}% / 均一 ${uni}% / 総合 ${tot}点`);
   });
 
-  /* === 操作説明 === */
+  /* 操作説明 */
   function drawOpsCanvas(){
     const c=document.getElementById('opsCanvas'),c2=c.getContext('2d'),CW=c.width,CH=c.height;
     c2.fillStyle='rgba(0,0,0,0.78)';c2.beginPath();c2.roundRect(0,0,CW,CH,32);c2.fill();
     c2.font='bold 40px sans-serif';c2.fillStyle='#fff';c2.textAlign='center';c2.fillText('操作方法',CW/2,62);
     c2.strokeStyle='rgba(255,255,255,0.2)';c2.lineWidth=2;c2.beginPath();c2.moveTo(40,82);c2.lineTo(CW-40,82);c2.stroke();
     const items=[
-      {l:'Ⓐ',d:'部屋を手元に設置',c:'#80EFFF'},
+      {l:'Ⓐ',d:'壁を手元に設置',c:'#80EFFF'},
       {l:'左グリップ',d:'鏝板を補充',c:'#FFD080'},
-      {l:'鏝板+ひねり',d:'コテ返し(材料乗せ)',c:'#88FF88'},
+      {l:'鏝板+ひねり',d:'コテ返し',c:'#88FF88'},
       {l:'壁+材料あり',d:'塗る',c:'#88FF88'},
       {l:'壁+材料なし',d:'均す(自動)',c:'#FFB060'},
       {l:'左レーザー',d:'採点 / リセット',c:'#ddd'},
     ];
     c2.textAlign='left';
     items.forEach((it,i)=>{
-      const y=136+i*58;
+      const y=136+i*56;
       c2.font='bold 30px sans-serif';c2.fillStyle=it.c;c2.fillText(it.l,40,y);
-      c2.fillStyle='rgba(255,255,255,0.3)';c2.fillText(':',228,y);
-      c2.font='30px sans-serif';c2.fillStyle='#fff';c2.fillText(it.d,248,y);
+      c2.fillStyle='rgba(255,255,255,0.3)';c2.fillText(':',222,y);
+      c2.font='30px sans-serif';c2.fillStyle='#fff';c2.fillText(it.d,242,y);
     });
   }
 
