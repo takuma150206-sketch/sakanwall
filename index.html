@@ -139,7 +139,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.6</div>
+  <div id="version">v4.7</div>
   <div id="info">
     <strong>左官MR練習 - 四辺出隅</strong><br>
     Ⓐ 壁を手元に設置<br>
@@ -166,6 +166,7 @@
       <canvas id="h3" width="128" height="32"></canvas>
       <canvas id="h4" width="128" height="32"></canvas>
       <canvas id="opsCanvas" width="512" height="512"></canvas>
+      <canvas id="resultCanvas" width="512" height="640"></canvas>
     </a-assets>
 
     <!--
@@ -243,9 +244,17 @@
     <a-entity position="-1.0 1.44 -0.55" rotation="0 35 0">
       <a-box id="resetBtn" position="-0.16 0 0" width="0.26" height="0.12" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="-0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
-      <a-box id="gradeBtn"  position="0.16 0 0"  width="0.26" height="0.12" depth="0.04" color="#4a4"></a-box>
-      <a-text value="採点"   position="0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
+      <a-box id="gradeBtn"  position="0.16 0 0"  width="0.26" height="0.12" depth="0.04" color="#55a"></a-box>
+      <a-text value="採点する" position="0.16 0 0.03" align="center" color="#fff" width="1.4"></a-text>
     </a-entity>
+
+    <!-- 採点結果パネル (ボタンを押すまで非表示) -->
+    <a-plane id="resultPanel"
+             width="0.85" height="1.06"
+             position="0 1.3 -0.70"
+             rotation="0 0 0"
+             material="src:#resultCanvas;shader:flat;transparent:true;"
+             visible="false"></a-plane>
 
     <!-- 操作説明 -->
     <a-plane width="0.68" height="0.55" position="0.95 1.65 -0.60" rotation="0 -30 0"
@@ -548,23 +557,205 @@
     ctx.restore();
   }
 
+  /* === 採点結果パネル === */
+  const resultCvs = document.getElementById('resultCanvas');
+  const rCtx = resultCvs.getContext('2d');
+  const RW = resultCvs.width, RH = resultCvs.height;
+  let resultTex = null;
+
+  sceneEl.addEventListener('loaded', ()=>{
+    /* resultPanel のテクスチャをセット */
+    const rp = document.getElementById('resultPanel');
+    if(rp){
+      const rm = rp.getObject3D('mesh');
+      if(rm){
+        resultTex = new THREE.CanvasTexture(resultCvs);
+        rm.material.map = resultTex;
+        rm.material.needsUpdate = true;
+      }
+    }
+  }, {once: true});
+
+  /* 塗り厚の目標値 */
+  const TARGET_THIN   = 1.5;  // 薄い上限
+  const TARGET_NORMAL = 5.0;  // 普通上限
+  // TARGET_NORMAL 超え = 厚い
+
+  function computePainterStats(p) {
+    let thin=0, normal=0, thick=0, sum=0, maxH=0, cnt=0;
+    const total = p.HW * p.HH;
+    for(let i=0; i<total; i++){
+      const h = p.heightData[i];
+      if(h < 0.08) continue; // 未塗り除外
+      cnt++;
+      sum += h;
+      if(h > maxH) maxH = h;
+      if     (h < TARGET_THIN)   thin++;
+      else if(h <= TARGET_NORMAL) normal++;
+      else                        thick++;
+    }
+    const painted  = cnt;
+    const coverage = painted / total; // 0~1
+    const avg      = painted > 0 ? sum / painted : 0;
+    /* 目標厚みを TARGET_NORMAL の中央値(3.25)として % 化 */
+    const TARGET_100 = (TARGET_THIN + TARGET_NORMAL) / 2; // 3.25
+    const thicknessPct = Math.min(150, Math.round(avg / TARGET_100 * 100));
+    return { thin, normal, thick, painted, total, coverage, avg, maxH, thicknessPct };
+  }
+
+  function drawResultPanel(statsArr) {
+    rCtx.clearRect(0, 0, RW, RH);
+
+    /* 背景 */
+    rCtx.fillStyle = 'rgba(8,8,12,0.88)';
+    rCtx.beginPath(); rCtx.roundRect(0,0,RW,RH,24); rCtx.fill();
+
+    /* タイトル */
+    rCtx.font = 'bold 36px sans-serif';
+    rCtx.fillStyle = '#ffffff';
+    rCtx.textAlign = 'center';
+    rCtx.fillText('採点結果', RW/2, 46);
+    rCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+    rCtx.lineWidth = 1.5;
+    rCtx.beginPath(); rCtx.moveTo(30,60); rCtx.lineTo(RW-30,60); rCtx.stroke();
+
+    const faceNames = ['メイン面', '左コーナー', '右コーナー', '上コーナー', '下コーナー'];
+    const isCorner  = [false, true, true, true, true];
+    const ROW_H = 96;
+    const BASE_Y = 72;
+
+    statsArr.forEach((st, i) => {
+      const y = BASE_Y + i * ROW_H;
+
+      /* 面名 */
+      rCtx.font = `bold 22px sans-serif`;
+      rCtx.fillStyle = isCorner[i] ? '#FFD080' : '#aaddff';
+      rCtx.textAlign = 'left';
+      rCtx.fillText(faceNames[i] + (isCorner[i] ? ' ★' : ''), 24, y + 20);
+
+      /* 塗り厚% */
+      const pctLabel = st.coverage < 0.05 ? '未塗り' : `塗り厚: ${st.thicknessPct}%`;
+      rCtx.font = 'bold 28px sans-serif';
+      rCtx.fillStyle = st.coverage < 0.05 ? '#888' :
+                       st.thicknessPct < 60  ? '#66aaff' :
+                       st.thicknessPct > 120 ? '#ff5555' : '#44ff88';
+      rCtx.textAlign = 'right';
+      rCtx.fillText(pctLabel, RW - 24, y + 22);
+
+      if(st.coverage < 0.05){
+        /* 未塗りバー */
+        rCtx.fillStyle = 'rgba(100,100,100,0.4)';
+        rCtx.fillRect(24, y+32, RW-48, 28);
+        rCtx.font = '20px sans-serif'; rCtx.fillStyle = '#888';
+        rCtx.textAlign = 'center';
+        rCtx.fillText('塗られていません', RW/2, y+52);
+      } else {
+        /* 塗りムラゲージ (緑/黄/赤) */
+        const total = st.thin + st.normal + st.thick;
+        const barW  = RW - 48;
+        const thinW   = Math.round(st.thin   / total * barW);
+        const normalW = Math.round(st.normal / total * barW);
+        const thickW  = barW - thinW - normalW;
+        let bx = 24;
+        const BY = y + 32, BH = 28;
+
+        /* 緑(薄い) */
+        if(thinW > 0){
+          rCtx.fillStyle = '#22bb44';
+          rCtx.fillRect(bx, BY, thinW, BH); bx += thinW;
+        }
+        /* 黄(普通) */
+        if(normalW > 0){
+          rCtx.fillStyle = '#ddbb00';
+          rCtx.fillRect(bx, BY, normalW, BH); bx += normalW;
+        }
+        /* 赤(厚い) */
+        if(thickW > 0){
+          rCtx.fillStyle = '#cc3322';
+          rCtx.fillRect(bx, BY, thickW, BH);
+        }
+        /* バー枠 */
+        rCtx.strokeStyle = 'rgba(255,255,255,0.25)';
+        rCtx.lineWidth = 1;
+        rCtx.strokeRect(24, BY, barW, BH);
+
+        /* % ラベル */
+        rCtx.font = '16px sans-serif'; rCtx.textAlign = 'left';
+        bx = 24;
+        const labels = [
+          {w:thinW,   color:'#aaffbb', txt:`薄${Math.round(st.thin/total*100)}%`},
+          {w:normalW, color:'#ffee88', txt:`普${Math.round(st.normal/total*100)}%`},
+          {w:thickW,  color:'#ffaaaa', txt:`厚${Math.round(st.thick/total*100)}%`},
+        ];
+        labels.forEach(l=>{
+          if(l.w > 38){
+            rCtx.fillStyle = l.color;
+            rCtx.fillText(l.txt, bx + 4, BY + 20);
+          }
+          bx += l.w;
+        });
+
+        /* 塗布率 */
+        rCtx.font = '18px sans-serif'; rCtx.textAlign = 'right';
+        rCtx.fillStyle = '#ccc';
+        rCtx.fillText(`塗布率: ${Math.round(st.coverage*100)}%`, RW-24, BY + 20);
+      }
+
+      /* 区切り線 */
+      if(i < statsArr.length - 1){
+        rCtx.strokeStyle = 'rgba(255,255,255,0.10)';
+        rCtx.lineWidth = 1;
+        rCtx.beginPath(); rCtx.moveTo(20, y+ROW_H-4); rCtx.lineTo(RW-20, y+ROW_H-4); rCtx.stroke();
+      }
+    });
+
+    /* 凡例 */
+    const LY = BASE_Y + statsArr.length * ROW_H + 4;
+    rCtx.fillStyle = 'rgba(255,255,255,0.06)';
+    rCtx.fillRect(20, LY, RW-40, 36);
+    rCtx.font = '18px sans-serif'; rCtx.textAlign = 'left';
+    [
+      {c:'#22bb44', t:'■ 緑=薄い'},
+      {c:'#ddbb00', t:'■ 黄=普通'},
+      {c:'#cc3322', t:'■ 赤=厚い'},
+    ].forEach((l,i)=>{
+      rCtx.fillStyle = l.c;
+      rCtx.fillText(l.t, 30 + i * 152, LY + 24);
+    });
+
+    /* 閉じるヒント */
+    rCtx.font = '18px sans-serif'; rCtx.fillStyle = 'rgba(255,255,255,0.4)';
+    rCtx.textAlign = 'center';
+    rCtx.fillText('もう一度「採点する」で閉じる', RW/2, RH - 16);
+
+    if(resultTex) resultTex.needsUpdate = true;
+  }
+
   /* HUD */
   let msgTimer=null;
   function setMessage(msg){
     document.getElementById('hudMessage').setAttribute('value',msg);
     clearTimeout(msgTimer);msgTimer=setTimeout(()=>document.getElementById('hudMessage').setAttribute('value',''),4000);
   }
+
+  let resultVisible = false;
+
   document.getElementById('resetBtn').addEventListener('click',()=>{
-    painters.forEach(p=>resetPainter(p));setMessage('全壁をリセットしました');
+    painters.forEach(p=>resetPainter(p));
+    /* 採点パネルも閉じる */
+    resultVisible = false;
+    document.getElementById('resultPanel').setAttribute('visible', false);
+    setMessage('全壁をリセットしました');
   });
+
   document.getElementById('gradeBtn').addEventListener('click',()=>{
-    let painted=0,target=0,total=0;
-    painters.forEach(p=>{
-      for(let i=0;i<p.thicknessMap.length;i++){const t=p.thicknessMap[i];total++;if(t>0)painted++;if(t>=2&&t<=5)target++;}
-    });
-    const cov=(painted/total*100).toFixed(0),uni=painted>0?(target/painted*100).toFixed(0):0;
-    const tot=((painted/total)*(target/Math.max(painted,1))*100).toFixed(0);
-    setMessage(`塗布率 ${cov}% / 均一 ${uni}% / 総合 ${tot}点`);
+    resultVisible = !resultVisible;
+    const panel = document.getElementById('resultPanel');
+    panel.setAttribute('visible', resultVisible);
+    if(resultVisible){
+      const statsArr = painters.map(p => computePainterStats(p));
+      drawResultPanel(statsArr);
+    }
   });
 
   /* 操作説明 */
