@@ -62,6 +62,14 @@
         if (typeof resetPainter==='function') resetPainter(staticPainter);
         if (typeof setMessage==='function') setMessage('壁を設置しました ✓');
       });
+
+      /* Ⓑボタン: コーナーモード切替 */
+      this.el.addEventListener('bbuttondown', () => {
+        if (typeof cornerMode !== 'undefined') {
+          cornerMode = (cornerMode + 1) % 3;
+          applyMode(cornerMode);
+        }
+      });
       document.getElementById('leftHand').addEventListener('gripdown', () => {
         hawkMortar=100; updateMortarVisuals(); setMessage('鏝板を補充しました 🪣');
       });
@@ -176,7 +184,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.1</div>
+  <div id="version">v4.2</div>
   <div id="info">
     <strong>左官MR練習プロトタイプ</strong><br>
     Ⓐ 壁を設置<br>
@@ -216,9 +224,9 @@
            width="0.015" height="1.0" depth="0.015" color="#ffffff"
            visible="false"></a-box>
 
-    <!-- コーナーモードラベル -->
-    <a-text id="modeLabel" value="モード: 平面"
-            position="0 2.05 -0.7" align="center" color="#FFD700" width="2.2"></a-text>
+    <!-- コーナーモードラベル (壁の上に常時表示) -->
+    <a-text id="modeLabel" value="【モード: 平面】 Ⓑボタンで切替"
+            position="0 2.08 -0.7" align="center" color="#FFD700" width="2.6"></a-text>
 
     <!-- HUD -->
     <a-entity position="-0.95 1.92 -0.55" rotation="0 35 0">
@@ -411,9 +419,9 @@
       edge.setAttribute('visible',mode.w2vis);
       edge.setAttribute('position',mode.edgePos);
     }
-    const modeText=`モード: ${mode.label}`;
+    const modeText=`【モード: ${mode.label}】 Ⓑボタンで切替`;
     if(lbl) lbl.setAttribute('value',modeText);
-    if(btnLbl) btnLbl.setAttribute('value',modeText);
+    if(btnLbl) btnLbl.setAttribute('value',`モード: ${mode.label}`);
     // 両壁をリセット
     resetPainter(staticPainter);
     resetPainter(staticPainter2);
@@ -658,7 +666,8 @@
     c2.font='bold 44px sans-serif';c2.fillStyle='#fff';c2.textAlign='center';c2.fillText('操作方法',CW/2,68);
     c2.strokeStyle='rgba(255,255,255,0.2)';c2.lineWidth=2;c2.beginPath();c2.moveTo(40,88);c2.lineTo(CW-40,88);c2.stroke();
     const items=[
-      {l:'Ⓐ',d:'壁を設置',c:'#80EFFF'},{l:'左グリップ',d:'鏝板を補充',c:'#FFD080'},
+      {l:'Ⓐ',d:'壁を設置',c:'#80EFFF'},{l:'Ⓑ',d:'モード切替(平面/入隅/出隅)',c:'#FF80FF'},
+      {l:'左グリップ',d:'鏝板を補充',c:'#FFD080'},
       {l:'鏝板+ひねり',d:'コテ返し',c:'#88FF88'},{l:'壁+材料あり',d:'塗る',c:'#88FF88'},
       {l:'壁+材料なし',d:'均す',c:'#FFB060'},{l:'左レーザー',d:'採点/リセット',c:'#ddd'},
     ];
