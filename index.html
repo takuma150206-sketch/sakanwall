@@ -139,7 +139,7 @@
   </style>
 </head>
 <body>
-  <div id="version">v4.5</div>
+  <div id="version">v4.6</div>
   <div id="info">
     <strong>左官MR練習 - 四辺出隅</strong><br>
     Ⓐ 壁を手元に設置<br>
@@ -210,24 +210,24 @@
       material="shader:standard;roughness:0.95;metalness:0;"
       position="0 0.80 -0.575" rotation="90 0 0"></a-entity>
 
-    <!-- 出隅ライン (4辺×2本 = 8本、白い細線で角を強調) -->
+    <!-- 出隅ライン (4辺×2本 = 8本、黒い細線で角を強調) -->
     <!-- 左辺の出隅 (上/下) -->
-    <a-box id="eL0" position="-0.60 1.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
-    <a-box id="eL1" position="-0.60 0.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
+    <a-box id="eL0" position="-0.60 1.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#111"></a-box>
+    <a-box id="eL1" position="-0.60 0.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#111"></a-box>
     <!-- 右辺の出隅 (上/下) -->
-    <a-box id="eR0" position=" 0.60 1.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
-    <a-box id="eR1" position=" 0.60 0.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#ddd"></a-box>
+    <a-box id="eR0" position=" 0.60 1.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#111"></a-box>
+    <a-box id="eR1" position=" 0.60 0.80 -0.70" width="0.010" height="0.010" depth="0.25" color="#111"></a-box>
     <!-- 上辺の縦ライン -->
-    <a-box id="eT0" position="-0.60 1.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
-    <a-box id="eT1" position=" 0.60 1.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eT0" position="-0.60 1.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#111"></a-box>
+    <a-box id="eT1" position=" 0.60 1.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#111"></a-box>
     <!-- 下辺の縦ライン -->
-    <a-box id="eB0" position="-0.60 0.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
-    <a-box id="eB1" position=" 0.60 0.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eB0" position="-0.60 0.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#111"></a-box>
+    <a-box id="eB1" position=" 0.60 0.80 -0.575" width="0.010" height="0.25" depth="0.010" color="#111"></a-box>
     <!-- メイン壁の4辺ライン -->
-    <a-box id="eML" position="-0.60 1.3 -0.70" width="0.010" height="1.0" depth="0.010" color="#ddd"></a-box>
-    <a-box id="eMR" position=" 0.60 1.3 -0.70" width="0.010" height="1.0" depth="0.010" color="#ddd"></a-box>
-    <a-box id="eMT" position="0 1.80 -0.70" width="1.2" height="0.010" depth="0.010" color="#ddd"></a-box>
-    <a-box id="eMB" position="0 0.80 -0.70" width="1.2" height="0.010" depth="0.010" color="#ddd"></a-box>
+    <a-box id="eML" position="-0.60 1.3 -0.70" width="0.010" height="1.0" depth="0.010" color="#111"></a-box>
+    <a-box id="eMR" position=" 0.60 1.3 -0.70" width="0.010" height="1.0" depth="0.010" color="#111"></a-box>
+    <a-box id="eMT" position="0 1.80 -0.70" width="1.2" height="0.010" depth="0.010" color="#111"></a-box>
+    <a-box id="eMB" position="0 0.80 -0.70" width="1.2" height="0.010" depth="0.010" color="#111"></a-box>
 
     <!-- HUD -->
     <a-entity position="-1.0 1.92 -0.55" rotation="0 35 0">
