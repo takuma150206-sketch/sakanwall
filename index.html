@@ -382,7 +382,7 @@
     }
     renderHt(p);
     trowelMortar=Math.max(0,trowelMortar-PCOST);
-    if(trowelMortar===0)setMsg('泥切れ');
+    if(trowelMortar===0)setMsg('モルタル切れ');
     updMortar();
   }
   /* 均し */
@@ -584,7 +584,7 @@
     ctx.font='bold 16px "Yu Mincho","Hiragino Mincho ProN",serif';
     ctx.textAlign='left';
     ctx.fillText(`鏝板  ${Math.floor(hawkMortar).toString().padStart(3,' ')}%`,W*0.16,478);
-    ctx.fillText(`鏝泥  ${Math.floor(trowelMortar/TMAX*100).toString().padStart(3,' ')}%`,W*0.16,502);
+    ctx.fillText(`鏝モルタル  ${Math.floor(trowelMortar/TMAX*100).toString().padStart(3,' ')}%`,W*0.16,502);
     /* メッセージ */
     if(hudMsg){
       ctx.fillStyle='#a02808';
