@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v5.3a ダッシュボード）</title>
+  <title>左官MR練習 - 平壁（v5.3b 道場）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -34,10 +34,10 @@
         o.getWorldPosition(this._tp);
         placeWalls(this._tp.x, this._tp.z);
         painters.forEach(p=>resetPainter(p));
-        setMsg('壁を設置しました ✓');
+        setMsg('壁を設置');
       });
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
-        hawkMortar=100;updMortar();setMsg('鏝板を補充しました');
+        hawkMortar=100;updMortar();setMsg('鏝板補充');
       });
       window.addEventListener('mousedown',()=>{this.mouseDown=true;});
       window.addEventListener('mouseup',  ()=>{this.mouseDown=false;});
@@ -59,13 +59,13 @@
         this._hp.set(0,0.012,-0.15).applyMatrix4(lh.object3D.matrixWorld);
         this._bc.set(0,0.015,-0.042).applyMatrix4(o.matrixWorld);
         if(this._bc.distanceTo(this._hp)<0.22){
-          if(!this.heq){this.heq=o.quaternion.clone();this.hma=0;if(hawkMortar>0)setMsg('手首をひねってコテ返し！');}
+          if(!this.heq){this.heq=o.quaternion.clone();this.hma=0;if(hawkMortar>0)setMsg('手首をひねれ');}
           this.hma=Math.max(this.hma,o.quaternion.angleTo(this.heq));
           if(this.hma>Math.PI*0.22&&hawkMortar>0){
             const amt=Math.min(50,hawkMortar);hawkMortar=Math.max(0,hawkMortar-amt);
             trowelMortar=Math.min(78,trowelMortar+amt);
             this.kgd=true;this.heq=null;this.hma=0;
-            updMortar();setMsg('コテ返し ✓');haptic(0.55,150);snd.playKG();
+            updMortar();setMsg('コテ返し');haptic(0.55,150);snd.playKG();
           }
         }else{this.heq=null;this.hma=0;}
       }
@@ -98,7 +98,7 @@
       const p=painters[hitIdx];
       if(trowelMortar<=0){smoothSurface(p,uvs);haptic(0.08,20);}
       else{
-        if(!this.kgd){setMsg('コテ返しで材料を取ってください');return;}
+        if(!this.kgd){setMsg('材料を取れ');return;}
         paintSurface(p,uvs);haptic(0.13,20);
       }
       requestHUD();
@@ -119,9 +119,9 @@
   </style>
 </head>
 <body>
-  <div id="ver">v5.3a ダッシュボード</div>
+  <div id="ver">v5.3b 道場</div>
   <div id="info">
-    <strong>左官MR練習 - 平壁</strong><br>
+    <strong>左官MR練習 - 平壁（道場）</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
     得点基準: 5mm = 100点<br>
     Ⓐ 壁を手元に設置<br>
@@ -138,7 +138,7 @@
       <canvas id="c0" width="512" height="512"></canvas>
       <canvas id="h0" width="128" height="128"></canvas>
       <canvas id="opsCvs" width="512" height="512"></canvas>
-      <canvas id="hudCvs" width="640" height="400"></canvas>
+      <canvas id="hudCvs" width="384" height="560"></canvas>
     </a-assets>
     <!-- メイン壁 -->
     <a-entity id="wallMain"
@@ -150,11 +150,11 @@
     <a-box id="guideB" position="0 0.7975 -0.6975"    width="1.210" height="0.005" depth="0.005" color="#A0825C" material="roughness:0.85;"></a-box>
     <a-box id="guideL" position="-0.6025 1.3 -0.6975" width="0.005" height="1.000" depth="0.005" color="#A0825C" material="roughness:0.85;"></a-box>
     <a-box id="guideR" position=" 0.6025 1.3 -0.6975" width="0.005" height="1.000" depth="0.005" color="#A0825C" material="roughness:0.85;"></a-box>
-    <!-- HUD（ダッシュボード） -->
-    <a-plane id="hudPanel" width="0.80" height="0.50" position="-1.0 1.92 -0.55" rotation="0 35 0"
+    <!-- HUD（道場・巻物風） -->
+    <a-plane id="hudPanel" width="0.46" height="0.68" position="-1.0 1.84 -0.55" rotation="0 35 0"
              material="shader:flat;color:#fff;"></a-plane>
     <!-- リセットボタン -->
-    <a-entity position="-1.0 1.50 -0.55" rotation="0 35 0">
+    <a-entity position="-1.0 1.36 -0.55" rotation="0 35 0">
       <a-box id="resetBtn" width="0.38" height="0.12" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
     </a-entity>
@@ -206,7 +206,7 @@
   /* モルタル状態 */
   let hawkMortar=100,trowelMortar=0,lastUV=null;
   const TMAX=60,PCOST=0.35;
-  let hudMsg='',msgT=null;
+  let hudMsg='',msgT=null,bestScore=0;
   function setMsg(m){hudMsg=m;requestHUD();clearTimeout(msgT);msgT=setTimeout(()=>{hudMsg='';requestHUD();},4000);}
   function updMortar(){
     const hv=document.getElementById('hMV');
@@ -289,7 +289,7 @@
     requestHUD();
   }
   const painters=WIDS.map((_,i)=>createPainter(CIDS[i],HIDS[i]));
-  let hudTex=null;
+  let hudTex=null,washiBg=null;
   sc.addEventListener('loaded',()=>{
     painters.forEach((p,i)=>{
       drawBase(p);
@@ -309,7 +309,7 @@
     hudTex.minFilter=THREE.LinearFilter;hudTex.magFilter=THREE.LinearFilter;
     const hudMesh=document.getElementById('hudPanel').getObject3D('mesh');
     if(hudMesh){hudMesh.material.map=hudTex;hudMesh.material.needsUpdate=true;}
-    drawOps();drawHUD();
+    prepareWashi();drawOps();drawHUD();
     /* HUD 保険：rAF が止まっても 500ms ごとに必ず再描画 */
     setInterval(drawHUD,500);
   });
@@ -382,7 +382,7 @@
     }
     renderHt(p);
     trowelMortar=Math.max(0,trowelMortar-PCOST);
-    if(trowelMortar===0)setMsg('泥切れ。コテ返しを');
+    if(trowelMortar===0)setMsg('泥切れ');
     updMortar();
   }
   /* 均し */
@@ -427,7 +427,7 @@
   }
   /* リセット */
   document.getElementById('resetBtn').addEventListener('click',()=>{
-    painters.forEach(p=>resetPainter(p));setMsg('壁をリセットしました');
+    painters.forEach(p=>resetPainter(p));setMsg('白紙に戻す');
   });
   /* 操作説明 */
   function drawOps(){
@@ -472,13 +472,53 @@
     const overall=uniformity*0.40+thickness*0.35+coverageScore*0.25;
     return{uniformity,thickness,coverage:coverageScore,overall,avgH:avg,covered};
   }
-  function scoreColor(s){
-    if(s>=0.80)return'#7BE382';
-    if(s>=0.60)return'#FFD555';
-    if(s>=0.30)return'#FF9B40';
-    return'#FF5C5C';
+  /* 段位 */
+  function getRank(score){
+    /* score: 0-100 */
+    if(score<15) return{name:'入 門',sub:'まずは塗ってみよ',col:'#7a5a3a'};
+    if(score<28) return{name:'修 行',sub:'手を動かせ',col:'#7a4a20'};
+    if(score<42) return{name:'三 級',sub:'端まで届かせよ',col:'#6a3a15'};
+    if(score<55) return{name:'二 級',sub:'厚みを意識せよ',col:'#5a2a08'};
+    if(score<66) return{name:'一 級',sub:'もう一息',col:'#4a1a02'};
+    if(score<75) return{name:'初 段',sub:'良き仕上がり',col:'#3a0a00'};
+    if(score<83) return{name:'二 段',sub:'平らに仕上ぐ',col:'#2a0500'};
+    if(score<90) return{name:'三 段',sub:'目を見張る出来',col:'#220300'};
+    if(score<96) return{name:'師 範',sub:'匠の領域',col:'#a02000'};
+    return       {name:'名 人',sub:'其の道を極めり',col:'#c02000'};
   }
-  /* ===== HUD 描画（ダッシュボード型） =====
+  /* ===== 和紙風背景の準備 ===== */
+  function prepareWashi(){
+    const cvs=document.getElementById('hudCvs');
+    if(!cvs)return;
+    washiBg=document.createElement('canvas');
+    washiBg.width=cvs.width;washiBg.height=cvs.height;
+    const ctx=washiBg.getContext('2d');
+    /* ベース色（生成り） */
+    const g=ctx.createLinearGradient(0,0,0,cvs.height);
+    g.addColorStop(0,'#EFE3C4');g.addColorStop(0.5,'#E8DBB6');g.addColorStop(1,'#DECCA0');
+    ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
+    /* 繊維テクスチャ */
+    for(let i=0;i<600;i++){
+      const x=Math.random()*cvs.width,y=Math.random()*cvs.height,l=Math.random()*14+3;
+      const a=Math.random()*Math.PI*2;
+      ctx.strokeStyle=`rgba(${130+Math.random()*40|0},${90+Math.random()*30|0},${50+Math.random()*30|0},${0.05+Math.random()*0.10})`;
+      ctx.lineWidth=0.5;
+      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);ctx.stroke();
+    }
+    /* 点状の繊維 */
+    for(let i=0;i<240;i++){
+      ctx.fillStyle=`rgba(${110+Math.random()*40|0},${70+Math.random()*30|0},${30+Math.random()*30|0},${0.08+Math.random()*0.12})`;
+      ctx.beginPath();ctx.arc(Math.random()*cvs.width,Math.random()*cvs.height,Math.random()*1.4+0.3,0,Math.PI*2);ctx.fill();
+    }
+    /* 経年の染み */
+    for(let i=0;i<4;i++){
+      const x=Math.random()*cvs.width,y=Math.random()*cvs.height,r=30+Math.random()*60;
+      const gr=ctx.createRadialGradient(x,y,0,x,y,r);
+      gr.addColorStop(0,'rgba(140,90,40,0.10)');gr.addColorStop(1,'rgba(140,90,40,0)');
+      ctx.fillStyle=gr;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+    }
+  }
+  /* ===== HUD 描画（道場・巻物風） =====
      XR 没入中は window.requestAnimationFrame が当てにならないので time-based throttle に変更 */
   let _hudLast=0;
   function requestHUD(){
@@ -491,66 +531,83 @@
     const cvs=document.getElementById('hudCvs');if(!cvs)return;
     const ctx=cvs.getContext('2d');
     const W=cvs.width,H=cvs.height;
-    /* 背景 */
-    ctx.fillStyle='rgba(18,20,26,0.92)';
-    ctx.beginPath();ctx.roundRect(0,0,W,H,22);ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.10)';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.roundRect(6,6,W-12,H-12,18);ctx.stroke();
-    /* タイトル */
-    ctx.fillStyle='#fff';ctx.font='bold 30px sans-serif';ctx.textAlign='center';ctx.textBaseline='alphabetic';
-    ctx.fillText('施 工 ダ ッ シ ュ ボ ー ド',W/2,52);
-    ctx.strokeStyle='rgba(255,255,255,0.16)';
-    ctx.beginPath();ctx.moveTo(W*0.10,70);ctx.lineTo(W*0.90,70);ctx.stroke();
-    /* ゲージ 3つ */
+    /* 和紙背景 */
+    if(washiBg)ctx.drawImage(washiBg,0,0);
+    else{ctx.fillStyle='#EBE1C4';ctx.fillRect(0,0,W,H);}
+    /* 上下の巻物軸（焦茶） */
+    ctx.fillStyle='#3a2308';
+    ctx.fillRect(0,0,W,18);ctx.fillRect(0,H-18,W,18);
+    ctx.fillStyle='rgba(255,200,120,0.25)';
+    ctx.fillRect(0,4,W,3);ctx.fillRect(0,H-7,W,3);
+    /* 内側の罫線 */
+    ctx.strokeStyle='rgba(110,70,30,0.5)';ctx.lineWidth=1.5;
+    ctx.strokeRect(20,30,W-40,H-60);
+    /* スコア計算 */
     const sc=computeScore(painters[0]);
-    const cy=200,r=70;
-    const xs=[W*0.18,W*0.50,W*0.82];
-    drawGauge(ctx,xs[0],cy,r,hawkMortar/100,'#FFD080',`${Math.floor(hawkMortar)}%`,'鏝 板');
-    drawGauge(ctx,xs[1],cy,r,trowelMortar/TMAX,'#80DFFF',`${Math.floor(trowelMortar/TMAX*100)}%`,'鏝 の 泥');
-    drawGauge(ctx,xs[2],cy,r,sc.overall,scoreColor(sc.overall),`${Math.floor(sc.overall*100)}`,'出 来 栄 え');
-    /* 細項目（出来栄えの内訳） */
-    const dy=330;
-    drawMiniBar(ctx,W*0.18,dy,'塗代',sc.thickness);
-    drawMiniBar(ctx,W*0.50,dy,'平滑',sc.uniformity);
-    drawMiniBar(ctx,W*0.82,dy,'被覆',sc.coverage);
+    const scoreVal=Math.floor(sc.overall*100);
+    if(scoreVal>bestScore)bestScore=scoreVal;
+    /* タイトル「施 工 評 定」 */
+    ctx.fillStyle='#2a1505';
+    ctx.font='bold 26px "Yu Mincho","Hiragino Mincho ProN","MS Mincho",serif';
+    ctx.textAlign='center';ctx.textBaseline='alphabetic';
+    ctx.fillText('施 工 評 定',W/2,62);
+    ctx.strokeStyle='rgba(110,70,30,0.6)';ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(W*0.20,76);ctx.lineTo(W*0.80,76);ctx.stroke();
+    /* 段位（大きく） */
+    const rk=getRank(scoreVal);
+    ctx.fillStyle=rk.col;
+    ctx.font='bold 92px "Yu Mincho","Hiragino Mincho ProN","MS Mincho",serif';
+    ctx.fillText(rk.name,W/2,180);
+    /* 副題 */
+    ctx.fillStyle='#5a2f10';
+    ctx.font='20px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText('— '+rk.sub+' —',W/2,212);
+    /* 点数 */
+    ctx.fillStyle='#3a1a05';
+    ctx.font='bold 40px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText(`${scoreVal}`,W/2-30,266);
+    ctx.font='bold 22px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText('点',W/2+18,266);
+    /* 細目（縦に3行） */
+    drawDetail(ctx,'平 滑 度',sc.uniformity,W,316);
+    drawDetail(ctx,'均 一 性',sc.thickness, W,354);
+    drawDetail(ctx,'被 覆 率',sc.coverage,  W,392);
+    /* 本日の最高 */
+    ctx.fillStyle='#5a2f10';
+    ctx.font='bold 18px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.textAlign='center';
+    ctx.fillText(`本日の最高  ${bestScore} 点`,W/2,434);
+    /* 残量（小さく下部に） */
+    ctx.strokeStyle='rgba(110,70,30,0.4)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(W*0.15,452);ctx.lineTo(W*0.85,452);ctx.stroke();
+    ctx.fillStyle='#3a1a05';
+    ctx.font='bold 16px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.textAlign='left';
+    ctx.fillText(`鏝板  ${Math.floor(hawkMortar).toString().padStart(3,' ')}%`,W*0.16,478);
+    ctx.fillText(`鏝泥  ${Math.floor(trowelMortar/TMAX*100).toString().padStart(3,' ')}%`,W*0.16,502);
     /* メッセージ */
     if(hudMsg){
-      ctx.fillStyle='#FFE36B';ctx.font='bold 22px sans-serif';ctx.textAlign='center';
-      ctx.fillText(hudMsg,W/2,378);
+      ctx.fillStyle='#a02808';
+      ctx.font='bold 20px "Yu Mincho","Hiragino Mincho ProN",serif';
+      ctx.textAlign='center';
+      ctx.fillText('〘 '+hudMsg+' 〙',W/2,532);
     }
     if(hudTex)hudTex.needsUpdate=true;
   }
-  function drawGauge(ctx,cx,cy,r,val,col,centerText,label){
+  function drawDetail(ctx,label,val,W,y){
     val=Math.max(0,Math.min(1,val));
-    const start=Math.PI*0.75,end=Math.PI*2.25,sw=end-start;
-    /* 背景リング */
-    ctx.strokeStyle='rgba(255,255,255,0.16)';ctx.lineWidth=16;ctx.lineCap='round';
-    ctx.beginPath();ctx.arc(cx,cy,r,start,end);ctx.stroke();
-    /* 前景アーク */
-    if(val>0.001){
-      ctx.strokeStyle=col;ctx.lineWidth=16;ctx.lineCap='round';
-      ctx.beginPath();ctx.arc(cx,cy,r,start,start+sw*val);ctx.stroke();
-    }
-    ctx.lineCap='butt';
-    /* 中央数値 */
-    ctx.fillStyle='#fff';ctx.font='bold 38px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(centerText,cx,cy);
-    ctx.textBaseline='alphabetic';
-    /* ラベル */
-    ctx.fillStyle=col;ctx.font='bold 22px sans-serif';
-    ctx.fillText(label,cx,cy+r+34);
-  }
-  function drawMiniBar(ctx,cx,y,label,val){
-    val=Math.max(0,Math.min(1,val));
-    const w=140,h=8;
-    ctx.fillStyle='#aaa';ctx.font='bold 16px sans-serif';ctx.textAlign='center';
-    ctx.fillText(label,cx,y-10);
-    ctx.fillStyle='rgba(255,255,255,0.16)';
-    ctx.fillRect(cx-w/2,y,w,h);
-    ctx.fillStyle=scoreColor(val);
-    ctx.fillRect(cx-w/2,y,w*val,h);
-    ctx.fillStyle='#fff';ctx.font='12px sans-serif';
-    ctx.fillText(`${Math.floor(val*100)}`,cx,y+24);
+    const barX=W*0.45,barW=W*0.40,barH=8;
+    ctx.fillStyle='#3a1a05';
+    ctx.font='bold 18px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.textAlign='left';ctx.fillText(label,W*0.13,y+5);
+    ctx.fillStyle='rgba(180,150,100,0.55)';
+    ctx.fillRect(barX,y-3,barW,barH);
+    ctx.fillStyle='#7a4015';
+    ctx.fillRect(barX,y-3,barW*val,barH);
+    ctx.fillStyle='#3a1a05';
+    ctx.font='bold 15px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.textAlign='right';
+    ctx.fillText(`${Math.floor(val*100)}`,W*0.87,y+5);
   }
   updMortar();
   </script>
