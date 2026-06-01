@@ -310,6 +310,8 @@
     const hudMesh=document.getElementById('hudPanel').getObject3D('mesh');
     if(hudMesh){hudMesh.material.map=hudTex;hudMesh.material.needsUpdate=true;}
     drawOps();drawHUD();
+    /* HUD 保険：rAF が止まっても 500ms ごとに必ず再描画 */
+    setInterval(drawHUD,500);
   });
   function markDirty(p){if(p.colorTex)p.colorTex.needsUpdate=true;}
   function renderHt(p){
@@ -476,9 +478,15 @@
     if(s>=0.30)return'#FF9B40';
     return'#FF5C5C';
   }
-  /* ===== HUD 描画（ダッシュボード型） ===== */
-  let _hudReq=null;
-  function requestHUD(){if(_hudReq)return;_hudReq=requestAnimationFrame(()=>{_hudReq=null;drawHUD();});}
+  /* ===== HUD 描画（ダッシュボード型） =====
+     XR 没入中は window.requestAnimationFrame が当てにならないので time-based throttle に変更 */
+  let _hudLast=0;
+  function requestHUD(){
+    const now=performance.now();
+    if(now-_hudLast<80)return;
+    _hudLast=now;
+    drawHUD();
+  }
   function drawHUD(){
     const cvs=document.getElementById('hudCvs');if(!cvs)return;
     const ctx=cvs.getContext('2d');
