@@ -244,32 +244,43 @@
     init(){if(this.ctx)return;try{this.ctx=new(window.AudioContext||window.webkitAudioContext)();
       const sr=this.ctx.sampleRate,b=this.ctx.createBuffer(1,sr,sr),d=b.getChannelData(0);
       for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;this.nb=b;}catch(e){}},
-    _paintFreq(spd){return 210+Math.min(spd,20)*55;},
-    _smoothFreq(spd){return 850+Math.min(spd,20)*90;},
+    /* v5.4 tuning 5: paint/smooth の連続音にも「ガリッ」の砂感を反映
+       - 主層: 狭い bandpass(Q=3〜7) → highpass+lowpass の広帯域 に変更、tonal な鳴きを排除
+       - grit層: 中域 bandpass 低Q + 遅い playbackRate で粗い砂粒感を上乗せ
+       - 主層 lowpass 天井を速度で変調 → 速いほど明るく */
+    _paintFreq(spd){return 1800+Math.min(spd,20)*80;},   /* 主層 lowpass 天井 (paint: 1800-3400 Hz) */
+    _smoothFreq(spd){return 3500+Math.min(spd,20)*120;}, /* 主層 lowpass 天井 (smooth: 3500-5900 Hz) */
     start(spd,mode){if(!this.ctx||!this.nb)return;this.stop();
       this.mode=mode;
       const isPaint=mode==='paint';
+      const now=this.ctx.currentTime;
+      /* 主層: HP+LP の帯域通過（Q なし = 広帯域ノイズ、tonal 感なし）*/
       const s=this.ctx.createBufferSource();s.buffer=this.nb;s.loop=true;
-      this.fn=this.ctx.createBiquadFilter();this.fn.type='bandpass';
+      s.playbackRate.value=isPaint?0.75:1.15;  /* paint は遅め=粒粗く、smooth は速め=細かく */
+      this.fnHP=this.ctx.createBiquadFilter();this.fnHP.type='highpass';
+      this.fnHP.frequency.value=isPaint?300:700;
+      this.fn=this.ctx.createBiquadFilter();this.fn.type='lowpass';
       this.fn.frequency.value=isPaint?this._paintFreq(spd):this._smoothFreq(spd);
-      this.fn.Q.value=isPaint?3:7;
-      const sec=this.ctx.createBiquadFilter();
-      if(isPaint){sec.type='lowpass';sec.frequency.value=420;}
-      else{sec.type='highpass';sec.frequency.value=520;}
+      /* grit層: 中域 bandpass 低Q + 遅 playbackRate = 粗い砂粒 */
       const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.loop=true;
-      const sg=this.ctx.createGain();sg.gain.value=isPaint?0.07:0.05;
-      this.gn=this.ctx.createGain();this.gn.gain.setValueAtTime(0,this.ctx.currentTime);
-      this.gn.gain.linearRampToValueAtTime(isPaint?0.16:0.11,this.ctx.currentTime+0.05);
-      s.connect(this.fn);this.fn.connect(this.gn);
+      s2.playbackRate.value=isPaint?0.55:0.85;
+      const sec=this.ctx.createBiquadFilter();sec.type='bandpass';
+      sec.frequency.value=isPaint?900:2200;
+      sec.Q.value=3;
+      const sg=this.ctx.createGain();sg.gain.value=isPaint?0.08:0.07;
+      this.gn=this.ctx.createGain();this.gn.gain.setValueAtTime(0,now);
+      this.gn.gain.linearRampToValueAtTime(isPaint?0.14:0.11,now+0.05);
+      s.connect(this.fnHP);this.fnHP.connect(this.fn);this.fn.connect(this.gn);
       s2.connect(sec);sec.connect(sg);sg.connect(this.gn);
       this.gn.connect(this.ctx.destination);s.start();s2.start();this.nd=s;this.nd2=s2;},
     upd(spd,mode){if(!this.fn)return;
       if(this.mode!==mode){this.start(spd,mode);return;}
+      /* 主層 lowpass 天井を速度で変調 */
       const targetFreq=mode==='paint'?this._paintFreq(spd):this._smoothFreq(spd);
       this.fn.frequency.setTargetAtTime(targetFreq,this.ctx.currentTime,0.05);},
     stop(){if(!this.nd)return;try{this.gn.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
       const n=this.nd,n2=this.nd2;setTimeout(()=>{try{n.stop();}catch(e){}try{n2?.stop();}catch(e){}},200);}catch(e){}
-      this.nd=this.nd2=this.gn=this.fn=null;this.mode=null;},
+      this.nd=this.nd2=this.gn=this.fn=this.fnHP=null;this.mode=null;},
     /* v5.4 tuning 4: 「ジー」→「ガリッ」。LFOトレモロ廃止（これが持続buzzの原因）、Qを下げ広帯域化、
        初頭に鋭い高音カリッのアタック、全体150ms前後の短い一発感に */
     playKG(){if(!this.ctx||!this.nb)return;
