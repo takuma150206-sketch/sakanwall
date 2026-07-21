@@ -270,39 +270,29 @@
     stop(){if(!this.nd)return;try{this.gn.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
       const n=this.nd,n2=this.nd2;setTimeout(()=>{try{n.stop();}catch(e){}try{n2?.stop();}catch(e){}},200);}catch(e){}
       this.nd=this.nd2=this.gn=this.fn=null;this.mode=null;},
-    /* v5.4 更新: 「ドン」→「ザクッ」。低音 thump を廃止、金属擦れの主音＋高域グリット＋末尾の湿ったスロップ */
+    /* v5.4 tuning 2: 「ザクッ」→「シャッ」。低音を全カット、高域中心の短いスウィッシュに再設計 */
     playKG(){if(!this.ctx||!this.nb)return;
       const now=this.ctx.currentTime;
-      /* 主音: 鏝板を鏝で擦る「ザクッ」 - bandpass 1500→700Hz の下降スイープ */
-      const s=this.ctx.createBufferSource();s.buffer=this.nb;s.playbackRate.value=1.2;
-      const f=this.ctx.createBiquadFilter();f.type='bandpass';
-      f.frequency.setValueAtTime(1500,now);
-      f.frequency.exponentialRampToValueAtTime(700,now+0.14);
-      f.Q.value=5;
+      /* 主音: 高域のスウィッシュ「シャッ」 - highpass 2200Hz、短く鋭い */
+      const s=this.ctx.createBufferSource();s.buffer=this.nb;s.playbackRate.value=1.5;
+      const f=this.ctx.createBiquadFilter();f.type='highpass';
+      f.frequency.value=2200;
       const g=this.ctx.createGain();
-      g.gain.setValueAtTime(0.60,now);
-      g.gain.exponentialRampToValueAtTime(0.001,now+0.22);
+      g.gain.setValueAtTime(0.55,now);
+      g.gain.exponentialRampToValueAtTime(0.001,now+0.15);
       s.connect(f);f.connect(g);g.connect(this.ctx.destination);
-      s.start(now);s.stop(now+0.24);
-      /* 副音: 立ち上がり 80ms だけの高域グリット（金属の細かい引っかき）*/
-      const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.playbackRate.value=1.4;
-      const f2=this.ctx.createBiquadFilter();f2.type='highpass';
-      f2.frequency.value=1600;
+      s.start(now);s.stop(now+0.17);
+      /* 副音: 3500→2000Hz の下降スウィープで「動き」を作る（シャッの語尾感）*/
+      const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.playbackRate.value=1.6;
+      const f2=this.ctx.createBiquadFilter();f2.type='bandpass';
+      f2.frequency.setValueAtTime(3500,now);
+      f2.frequency.exponentialRampToValueAtTime(2000,now+0.08);
+      f2.Q.value=6;
       const g2=this.ctx.createGain();
-      g2.gain.setValueAtTime(0.35,now);
-      g2.gain.exponentialRampToValueAtTime(0.001,now+0.08);
+      g2.gain.setValueAtTime(0.40,now);
+      g2.gain.exponentialRampToValueAtTime(0.001,now+0.12);
       s2.connect(f2);f2.connect(g2);g2.connect(this.ctx.destination);
-      s2.start(now);s2.stop(now+0.10);
-      /* 尾音: 後半だけモルタルを掬い上げた瞬間の軽いスロップ */
-      const s3=this.ctx.createBufferSource();s3.buffer=this.nb;
-      const f3=this.ctx.createBiquadFilter();f3.type='lowpass';
-      f3.frequency.value=380;
-      const g3=this.ctx.createGain();
-      g3.gain.setValueAtTime(0,now);
-      g3.gain.linearRampToValueAtTime(0.15,now+0.12);
-      g3.gain.exponentialRampToValueAtTime(0.001,now+0.24);
-      s3.connect(f3);f3.connect(g3);g3.connect(this.ctx.destination);
-      s3.start(now);s3.stop(now+0.26);}
+      s2.start(now);s2.stop(now+0.14);}
   };
   /* 壁・塗代ガイド配置 */
   function placeWalls(cx,cz){
