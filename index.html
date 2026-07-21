@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v5.3b 道場）</title>
+  <title>左官MR練習 - 平壁（v5.4 道場・湿り感）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -23,6 +23,7 @@
       this.lastTick=0;this.wasContact=false;this.mouseDown=false;
       this.heq=null;this.hma=0;this.kgd=false;
       this._lp=new THREE.Vector3();this.spd=0;
+      this._wasHadMortar=false;   /* ② mortar-just-ran-out haptic 用 */
       this.rc=new THREE.Raycaster();this.rc.far=0.08;
       const Y0=-0.085,Y1=+0.115,BZ=-0.042;
       this.bpts=[];
@@ -54,6 +55,7 @@
         if(s?.inputSources)for(const src of s.inputSources)
           if(src.handedness==='right'&&src.gamepad?.hapticActuators?.length){window._rgp=src.gamepad;break;}
       }catch(e){}}
+      /* コテ返し */
       const lh=document.getElementById('leftHand');
       if(lh?.object3D){
         this._hp.set(0,0.012,-0.15).applyMatrix4(lh.object3D.matrixWorld);
@@ -93,14 +95,34 @@
         if(h.length&&h[0].uv)uvs.push({x:h[0].uv.x,y:h[0].uv.y});
       }
       if(uvs.length<2){lastUV=null;this.wasContact=false;return;}
-      if(!this.wasContact){haptic(0.65,55);snd.start(this.spd);this.wasContact=true;}
-      else snd.upd(this.spd);
-      const p=painters[hitIdx];
-      if(trowelMortar<=0){smoothSurface(p,uvs);haptic(0.08,20);}
-      else{
-        if(!this.kgd){setMsg('材料を取れ');return;}
-        paintSurface(p,uvs);haptic(0.13,20);
+      /* ③ mode-aware sound + ② rich haptics */
+      let mode;
+      if(trowelMortar<=0) mode='smooth';
+      else if(!this.kgd){
+        setMsg('材料を取れ');
+        if(this.wasContact){snd.stop();this.wasContact=false;}
+        return;
       }
+      else mode='paint';
+      if(!this.wasContact){haptic(0.65,55);snd.start(this.spd,mode);this.wasContact=true;}
+      else snd.upd(this.spd,mode);
+      const p=painters[hitIdx];
+      const spdF=Math.max(0,Math.min(1,this.spd/15));
+      if(mode==='smooth'){
+        smoothSurface(p,uvs);
+        /* 均し: 乾いた抵抗感、速度で強度が変わる */
+        haptic(0.05+spdF*0.10, 15+Math.round((1-spdF)*15));
+      }else{
+        paintSurface(p,uvs);
+        /* 塗り: モルタル量と速度で強度・パルス長が変わる */
+        const mortarF = 0.08 + 0.18 * (trowelMortar/TMAX);
+        haptic(mortarF, Math.round(30 - spdF*15));
+      }
+      /* ② モルタルが今このtickで0になった瞬間の「カリッ」 */
+      if(trowelMortar===0 && this._wasHadMortar){
+        haptic(0.55, 80);
+      }
+      this._wasHadMortar = trowelMortar > 0;
       requestHUD();
     }
   });
@@ -119,15 +141,14 @@
   </style>
 </head>
 <body>
-  <div id="ver">v5.3b 道場</div>
+  <div id="ver">v5.4 道場 (湿り感)</div>
   <div id="info">
-    <strong>左官MR練習 - 平壁（道場）</strong><br>
+    <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
     得点基準: 5mm = 100点<br>
-    Ⓐ 壁を手元に設置<br>
-    左グリップ: 鏝板を補充<br>
-    鏝板+ひねり → コテ返し<br>
-    材料あり → 塗る / なし → 均す
+    ① 湿ったモルタルの艶<br>
+    ② 触覚が量・速度で変化<br>
+    ③ 塗り／均しで音が分かれる
   </div>
   <button id="btn" disabled>確認中...</button>
   <div id="st">確認中...</div>
@@ -137,20 +158,21 @@
     <a-assets>
       <canvas id="c0" width="512" height="512"></canvas>
       <canvas id="h0" width="128" height="128"></canvas>
+      <canvas id="rh0" width="128" height="128"></canvas>
       <canvas id="opsCvs" width="512" height="512"></canvas>
       <canvas id="hudCvs" width="384" height="560"></canvas>
     </a-assets>
-    <!-- メイン壁 -->
+    <!-- メイン壁: base roughness=1.0, metalness=0.05（湿り感のために metalness を少し盛る） -->
     <a-entity id="wallMain"
       geometry="primitive:plane;width:1.2;height:1.0;segmentsWidth:48;segmentsHeight:40"
-      material="shader:standard;roughness:0.95;metalness:0;"
+      material="shader:standard;roughness:1.0;metalness:0.05;"
       position="0 1.3 -0.70"></a-entity>
     <!-- 塗代ガイド（5mm×5mm 角材, 4辺） -->
     <a-box id="guideT" position="0 1.8025 -0.6975"    width="1.210" height="0.005" depth="0.005" color="#A0825C" material="roughness:0.85;"></a-box>
     <a-box id="guideB" position="0 0.7975 -0.6975"    width="1.210" height="0.005" depth="0.005" color="#A0825C" material="roughness:0.85;"></a-box>
     <a-box id="guideL" position="-0.6025 1.3 -0.6975" width="0.005" height="1.000" depth="0.005" color="#A0825C" material="roughness:0.85;"></a-box>
     <a-box id="guideR" position=" 0.6025 1.3 -0.6975" width="0.005" height="1.000" depth="0.005" color="#A0825C" material="roughness:0.85;"></a-box>
-    <!-- HUD（道場・巻物風） -->
+    <!-- HUD (道場・巻物風) -->
     <a-plane id="hudPanel" width="0.46" height="0.68" position="-1.0 1.84 -0.55" rotation="0 35 0"
              material="shader:flat;color:#fff;"></a-plane>
     <!-- リセットボタン -->
@@ -178,9 +200,9 @@
       <a-cylinder position="0 -0.065 -0.15" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
       <a-sphere id="hMV" position="0 0.022 -0.15" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
     </a-entity>
-    <a-light type="ambient" intensity="0.70"></a-light>
-    <a-light type="directional" intensity="0.90" position="1 2 1"></a-light>
-    <a-light type="directional" intensity="0.25" position="-1 1 0.5" color="#c8d8ff"></a-light>
+    <a-light type="ambient" intensity="0.65"></a-light>
+    <a-light type="directional" intensity="0.95" position="1 2 1"></a-light>
+    <a-light type="directional" intensity="0.30" position="-1 1 0.5" color="#c8d8ff"></a-light>
   </a-scene>
   <script>
   /* WebXR */
@@ -215,26 +237,39 @@
     if(tv){const r=trowelMortar/TMAX;tv.setAttribute('material',`color:#828278;roughness:0.9;metalness:0;opacity:${(r*0.92).toFixed(2)};transparent:true`);}
     requestHUD();
   }
-  /* サウンド */
-  const snd={ctx:null,nb:null,nd:null,nd2:null,gn:null,fn:null,
+  /* ③ サウンド: 塗り(wet)と均し(dry)の2モード
+     paint: 湿った低め「シャー…」、bandpass 中心低め+lowpass 補助
+     smooth: 乾いた高め「ザラ…」、bandpass 中心高め+highpass 補助 */
+  const snd={ctx:null,nb:null,nd:null,nd2:null,gn:null,fn:null,mode:null,
     init(){if(this.ctx)return;try{this.ctx=new(window.AudioContext||window.webkitAudioContext)();
       const sr=this.ctx.sampleRate,b=this.ctx.createBuffer(1,sr,sr),d=b.getChannelData(0);
       for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;this.nb=b;}catch(e){}},
-    start(spd){if(!this.ctx||!this.nb)return;this.stop();
+    _paintFreq(spd){return 210+Math.min(spd,20)*55;},
+    _smoothFreq(spd){return 850+Math.min(spd,20)*90;},
+    start(spd,mode){if(!this.ctx||!this.nb)return;this.stop();
+      this.mode=mode;
+      const isPaint=mode==='paint';
       const s=this.ctx.createBufferSource();s.buffer=this.nb;s.loop=true;
       this.fn=this.ctx.createBiquadFilter();this.fn.type='bandpass';
-      this.fn.frequency.value=200+Math.min(spd,20)*80;this.fn.Q.value=4;
-      const lf=this.ctx.createBiquadFilter();lf.type='lowpass';lf.frequency.value=280;
+      this.fn.frequency.value=isPaint?this._paintFreq(spd):this._smoothFreq(spd);
+      this.fn.Q.value=isPaint?3:7;
+      const sec=this.ctx.createBiquadFilter();
+      if(isPaint){sec.type='lowpass';sec.frequency.value=420;}
+      else{sec.type='highpass';sec.frequency.value=520;}
       const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.loop=true;
-      const lg=this.ctx.createGain();lg.gain.value=0.04;
+      const sg=this.ctx.createGain();sg.gain.value=isPaint?0.07:0.05;
       this.gn=this.ctx.createGain();this.gn.gain.setValueAtTime(0,this.ctx.currentTime);
-      this.gn.gain.linearRampToValueAtTime(0.12,this.ctx.currentTime+0.05);
-      s.connect(this.fn);this.fn.connect(this.gn);s2.connect(lf);lf.connect(lg);lg.connect(this.gn);
+      this.gn.gain.linearRampToValueAtTime(isPaint?0.16:0.11,this.ctx.currentTime+0.05);
+      s.connect(this.fn);this.fn.connect(this.gn);
+      s2.connect(sec);sec.connect(sg);sg.connect(this.gn);
       this.gn.connect(this.ctx.destination);s.start();s2.start();this.nd=s;this.nd2=s2;},
-    upd(spd){if(!this.fn)return;this.fn.frequency.setTargetAtTime(200+Math.min(spd,20)*80,this.ctx.currentTime,0.05);},
+    upd(spd,mode){if(!this.fn)return;
+      if(this.mode!==mode){this.start(spd,mode);return;}
+      const targetFreq=mode==='paint'?this._paintFreq(spd):this._smoothFreq(spd);
+      this.fn.frequency.setTargetAtTime(targetFreq,this.ctx.currentTime,0.05);},
     stop(){if(!this.nd)return;try{this.gn.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
       const n=this.nd,n2=this.nd2;setTimeout(()=>{try{n.stop();}catch(e){}try{n2?.stop();}catch(e){}},200);}catch(e){}
-      this.nd=this.nd2=this.gn=this.fn=null;},
+      this.nd=this.nd2=this.gn=this.fn=null;this.mode=null;},
     playKG(){if(!this.ctx||!this.nb)return;
       const now=this.ctx.currentTime;
       const s=this.ctx.createBufferSource();s.buffer=this.nb;
@@ -263,12 +298,16 @@
   const WIDS=['wallMain'];
   const CIDS=['c0'];
   const HIDS=['h0'];
-  function createPainter(cid,hid){
-    const cvs=document.getElementById(cid),hcvs=document.getElementById(hid);
-    const ctx=cvs.getContext('2d'),hc=hcvs.getContext('2d');
+  const RIDS=['rh0'];   /* ① roughness canvas */
+  function createPainter(cid,hid,rid){
+    const cvs=document.getElementById(cid),hcvs=document.getElementById(hid),rcvs=document.getElementById(rid);
+    const ctx=cvs.getContext('2d'),hc=hcvs.getContext('2d'),rhc=rcvs.getContext('2d');
     const W=cvs.width,H=cvs.height,HW=hcvs.width,HH=hcvs.height;
-    return{W,H,HW,HH,ctx,hc,colorTex:null,heightTex:null,
-      heightData:new Float32Array(HW*HH),htImg:hc.createImageData(HW,HH),
+    return{W,H,HW,HH,ctx,hc,rhc,colorTex:null,heightTex:null,roughnessTex:null,
+      heightData:new Float32Array(HW*HH),
+      wetnessData:new Float32Array(HW*HH),   /* ① 0(乾)〜1(濡) */
+      htImg:hc.createImageData(HW,HH),
+      rhImg:rhc.createImageData(HW,HH),
       thickMap:new Uint8Array(W*H),lastUV:null};
   }
   function drawBase(p){
@@ -282,17 +321,22 @@
     }
   }
   function resetPainter(p){
-    p.thickMap=new Uint8Array(p.W*p.H);p.heightData=new Float32Array(p.HW*p.HH);p.lastUV=null;
+    p.thickMap=new Uint8Array(p.W*p.H);
+    p.heightData=new Float32Array(p.HW*p.HH);
+    p.wetnessData=new Float32Array(p.HW*p.HH);
+    p.lastUV=null;
     drawBase(p);p.hc.fillStyle='#000';p.hc.fillRect(0,0,p.HW,p.HH);
+    renderRh(p);   /* 乾いた roughness に戻す */
     if(p.colorTex)p.colorTex.needsUpdate=true;
     if(p.heightTex)p.heightTex.needsUpdate=true;
     requestHUD();
   }
-  const painters=WIDS.map((_,i)=>createPainter(CIDS[i],HIDS[i]));
+  const painters=WIDS.map((_,i)=>createPainter(CIDS[i],HIDS[i],RIDS[i]));
   let hudTex=null,washiBg=null;
   sc.addEventListener('loaded',()=>{
     painters.forEach((p,i)=>{
       drawBase(p);
+      renderRh(p);   /* 先に乾いた状態でキャンバスを塗っておく（テクスチャ生成前）*/
       const wEl=document.getElementById(WIDS[i]);if(!wEl)return;
       const mesh=wEl.getObject3D('mesh');if(!mesh)return;
       p.colorTex=new THREE.CanvasTexture(document.getElementById(CIDS[i]));
@@ -301,6 +345,11 @@
       mesh.material.displacementMap=p.heightTex;
       mesh.material.displacementScale=0.010;
       mesh.material.displacementBias=0;
+      /* ① roughnessMap を割り当て — 塗った直後だけ濡れた質感 */
+      p.roughnessTex=new THREE.CanvasTexture(document.getElementById(RIDS[i]));
+      mesh.material.roughnessMap=p.roughnessTex;
+      mesh.material.roughness=1.0;
+      mesh.material.metalness=0.05;
       mesh.material.needsUpdate=true;
     });
     /* HUD テクスチャ */
@@ -310,8 +359,23 @@
     const hudMesh=document.getElementById('hudPanel').getObject3D('mesh');
     if(hudMesh){hudMesh.material.map=hudTex;hudMesh.material.needsUpdate=true;}
     prepareWashi();drawOps();drawHUD();
-    /* HUD 保険：rAF が止まっても 500ms ごとに必ず再描画 */
-    setInterval(drawHUD,500);
+    /* HUD 保険 + ① 濡れの経時的な乾き */
+    setInterval(()=>{
+      /* ① wetness decay: 半減期 ~15秒（0.977^30 ≒ 0.5）*/
+      painters.forEach(p=>{
+        let anyWet=false;
+        for(let i=0;i<p.wetnessData.length;i++){
+          if(p.wetnessData[i]>0.005){
+            p.wetnessData[i]*=0.977;
+            anyWet=true;
+          }else if(p.wetnessData[i]!==0){
+            p.wetnessData[i]=0;anyWet=true;
+          }
+        }
+        if(anyWet)renderRh(p);
+      });
+      drawHUD();
+    },500);
   });
   function markDirty(p){if(p.colorTex)p.colorTex.needsUpdate=true;}
   function renderHt(p){
@@ -321,6 +385,20 @@
       d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255;
     }
     p.hc.putImageData(p.htImg,0,0);if(p.heightTex)p.heightTex.needsUpdate=true;
+  }
+  /* ① 湿り度 → roughness テクスチャ更新
+     roughnessMap は緑チャンネルを roughness に乗じる。
+     wet=1 → green=90 (roughness=1.0×0.35=0.35 → ツヤ)
+     dry=0 → green=240 (roughness=1.0×0.94=0.94 → マット) */
+  function renderRh(p){
+    const d=p.rhImg.data;
+    for(let i=0;i<p.wetnessData.length;i++){
+      const w=Math.max(0,Math.min(1,p.wetnessData[i]));
+      const g=Math.round(90+(1-w)*150);
+      d[i*4]=g;d[i*4+1]=g;d[i*4+2]=g;d[i*4+3]=255;
+    }
+    p.rhc.putImageData(p.rhImg,0,0);
+    if(p.roughnessTex)p.roughnessTex.needsUpdate=true;
   }
   /* 塗り */
   const MR=82,MG=80,MB=75;
@@ -377,10 +455,14 @@
         for(let x=Math.max(0,cx-rH);x<Math.min(p.HW,cx+rH+1);x+=2){
           const d=Math.sqrt((x-cx)**2+(y-cy)**2);if(d>rH)continue;
           const ef=d<rH*0.75?1:1-(d-rH*0.75)/(rH*0.25);
-          p.heightData[y*p.HW+x]+=ef*sf*0.55;
+          const idx=y*p.HW+x;
+          p.heightData[idx]+=ef*sf*0.55;
+          /* ① 塗った箇所は「濡れ」に上書き（max）*/
+          p.wetnessData[idx]=Math.max(p.wetnessData[idx],ef*0.95);
         }
     }
     renderHt(p);
+    renderRh(p);
     trowelMortar=Math.max(0,trowelMortar-PCOST);
     if(trowelMortar===0)setMsg('モルタル切れ');
     updMortar();
@@ -412,6 +494,7 @@
     ctx.restore();
     markDirty(p);
     const rH=Math.round(p.HW*0.084/1.2*0.8);
+    let anyWet=false;
     for(const uv of uvs){
       const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
       for(let y=Math.max(0,cy-rH);y<Math.min(p.HH,cy+rH+1);y+=2)
@@ -421,9 +504,13 @@
           if(p.heightData[idx]<0.08)continue;
           const mn=p.heightData[idx]*0.55;
           p.heightData[idx]=Math.max(mn,p.heightData[idx]-(1-d/rH)*0.12);
+          /* 均しは軽く艶を復活（磨いた感） */
+          p.wetnessData[idx]=Math.min(1,p.wetnessData[idx]+0.20);
+          anyWet=true;
         }
     }
     renderHt(p);
+    if(anyWet)renderRh(p);
   }
   /* リセット */
   document.getElementById('resetBtn').addEventListener('click',()=>{
@@ -451,7 +538,7 @@
       c2.font='30px sans-serif';c2.fillStyle='#fff';c2.fillText(it.d,242,y);
     });
   }
-  /* ===== スコア計算（共通） ===== */
+  /* ===== スコア計算 ===== */
   function computeScore(p){
     /* TARGET=5: 塗代5mm = 100点。max heightData=10 (10mm) まで盛れるが、5を超えると盛りすぎで減点。 */
     const TARGET=5.0,COV_TH=0.5;
@@ -474,7 +561,6 @@
   }
   /* 段位 */
   function getRank(score){
-    /* score: 0-100 */
     if(score<15) return{name:'入 門',sub:'まずは塗ってみよ',col:'#7a5a3a'};
     if(score<28) return{name:'修 行',sub:'手を動かせ',col:'#7a4a20'};
     if(score<42) return{name:'三 級',sub:'端まで届かせよ',col:'#6a3a15'};
@@ -486,18 +572,15 @@
     if(score<96) return{name:'師 範',sub:'匠の領域',col:'#a02000'};
     return       {name:'名 人',sub:'其の道を極めり',col:'#c02000'};
   }
-  /* ===== 和紙風背景の準備 ===== */
+  /* 和紙風背景 */
   function prepareWashi(){
-    const cvs=document.getElementById('hudCvs');
-    if(!cvs)return;
+    const cvs=document.getElementById('hudCvs');if(!cvs)return;
     washiBg=document.createElement('canvas');
     washiBg.width=cvs.width;washiBg.height=cvs.height;
     const ctx=washiBg.getContext('2d');
-    /* ベース色（生成り） */
     const g=ctx.createLinearGradient(0,0,0,cvs.height);
     g.addColorStop(0,'#EFE3C4');g.addColorStop(0.5,'#E8DBB6');g.addColorStop(1,'#DECCA0');
     ctx.fillStyle=g;ctx.fillRect(0,0,cvs.width,cvs.height);
-    /* 繊維テクスチャ */
     for(let i=0;i<600;i++){
       const x=Math.random()*cvs.width,y=Math.random()*cvs.height,l=Math.random()*14+3;
       const a=Math.random()*Math.PI*2;
@@ -505,12 +588,10 @@
       ctx.lineWidth=0.5;
       ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);ctx.stroke();
     }
-    /* 点状の繊維 */
     for(let i=0;i<240;i++){
       ctx.fillStyle=`rgba(${110+Math.random()*40|0},${70+Math.random()*30|0},${30+Math.random()*30|0},${0.08+Math.random()*0.12})`;
       ctx.beginPath();ctx.arc(Math.random()*cvs.width,Math.random()*cvs.height,Math.random()*1.4+0.3,0,Math.PI*2);ctx.fill();
     }
-    /* 経年の染み */
     for(let i=0;i<4;i++){
       const x=Math.random()*cvs.width,y=Math.random()*cvs.height,r=30+Math.random()*60;
       const gr=ctx.createRadialGradient(x,y,0,x,y,r);
@@ -518,8 +599,8 @@
       ctx.fillStyle=gr;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
     }
   }
-  /* ===== HUD 描画（道場・巻物風） =====
-     XR 没入中は window.requestAnimationFrame が当てにならないので time-based throttle に変更 */
+  /* HUD 描画（道場・巻物風）
+     XR 中 window.rAF が当てにならないので time-based throttle */
   let _hudLast=0;
   function requestHUD(){
     const now=performance.now();
@@ -531,29 +612,27 @@
     const cvs=document.getElementById('hudCvs');if(!cvs)return;
     const ctx=cvs.getContext('2d');
     const W=cvs.width,H=cvs.height;
-    /* 和紙背景 */
     if(washiBg)ctx.drawImage(washiBg,0,0);
     else{ctx.fillStyle='#EBE1C4';ctx.fillRect(0,0,W,H);}
-    /* 上下の巻物軸（焦茶） */
+    /* 巻物の上下軸 */
     ctx.fillStyle='#3a2308';
     ctx.fillRect(0,0,W,18);ctx.fillRect(0,H-18,W,18);
     ctx.fillStyle='rgba(255,200,120,0.25)';
     ctx.fillRect(0,4,W,3);ctx.fillRect(0,H-7,W,3);
-    /* 内側の罫線 */
+    /* 内側罫線 */
     ctx.strokeStyle='rgba(110,70,30,0.5)';ctx.lineWidth=1.5;
     ctx.strokeRect(20,30,W-40,H-60);
-    /* スコア計算 */
     const sc=computeScore(painters[0]);
     const scoreVal=Math.floor(sc.overall*100);
     if(scoreVal>bestScore)bestScore=scoreVal;
-    /* タイトル「施 工 評 定」 */
+    /* タイトル */
     ctx.fillStyle='#2a1505';
     ctx.font='bold 26px "Yu Mincho","Hiragino Mincho ProN","MS Mincho",serif';
     ctx.textAlign='center';ctx.textBaseline='alphabetic';
     ctx.fillText('施 工 評 定',W/2,62);
     ctx.strokeStyle='rgba(110,70,30,0.6)';ctx.lineWidth=1.2;
     ctx.beginPath();ctx.moveTo(W*0.20,76);ctx.lineTo(W*0.80,76);ctx.stroke();
-    /* 段位（大きく） */
+    /* 段位 */
     const rk=getRank(scoreVal);
     ctx.fillStyle=rk.col;
     ctx.font='bold 92px "Yu Mincho","Hiragino Mincho ProN","MS Mincho",serif';
@@ -568,7 +647,7 @@
     ctx.fillText(`${scoreVal}`,W/2-30,266);
     ctx.font='bold 22px "Yu Mincho","Hiragino Mincho ProN",serif';
     ctx.fillText('点',W/2+18,266);
-    /* 細目（縦に3行） */
+    /* 細目 */
     drawDetail(ctx,'平 滑 度',sc.uniformity,W,316);
     drawDetail(ctx,'均 一 性',sc.thickness, W,354);
     drawDetail(ctx,'被 覆 率',sc.coverage,  W,392);
@@ -577,14 +656,17 @@
     ctx.font='bold 18px "Yu Mincho","Hiragino Mincho ProN",serif';
     ctx.textAlign='center';
     ctx.fillText(`本日の最高  ${bestScore} 点`,W/2,434);
-    /* 残量（小さく下部に） */
+    /* 残量（数値を右寄せに揃える）*/
     ctx.strokeStyle='rgba(110,70,30,0.4)';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(W*0.15,452);ctx.lineTo(W*0.85,452);ctx.stroke();
     ctx.fillStyle='#3a1a05';
     ctx.font='bold 16px "Yu Mincho","Hiragino Mincho ProN",serif';
     ctx.textAlign='left';
-    ctx.fillText(`鏝板  ${Math.floor(hawkMortar).toString().padStart(3,' ')}%`,W*0.16,478);
-    ctx.fillText(`鏝モルタル  ${Math.floor(trowelMortar/TMAX*100).toString().padStart(3,' ')}%`,W*0.16,502);
+    ctx.fillText('鏝板',W*0.18,478);
+    ctx.fillText('モルタル',W*0.18,502);
+    ctx.textAlign='right';
+    ctx.fillText(`${Math.floor(hawkMortar)} %`,W*0.82,478);
+    ctx.fillText(`${Math.floor(trowelMortar/TMAX*100)} %`,W*0.82,502);
     /* メッセージ */
     if(hudMsg){
       ctx.fillStyle='#a02808';
