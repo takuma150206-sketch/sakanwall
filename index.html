@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v5.4 道場・湿り感）</title>
+  <title>左官MR練習 - 平壁（v5.5 道場・角度判定+盛り）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -155,7 +155,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v5.4 道場 (角度判定+盛り)</div>
+  <div id="ver">v5.5 道場 (角度判定+盛り)</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -206,11 +206,8 @@
       <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
       <a-box id="tMV" position="0 0.035 -0.046" width="0.080" height="0.198" depth="0.006" color="#828278"
              material="roughness:0.9;metalness:0;opacity:0;transparent:true;"></a-box>
-      <!-- ⑤ 鏝先モルタルの盛り: 4つのblob、scale/opacity をモルタル量と連動 -->
-      <a-sphere id="tPile1" position="0 0.150 -0.048"     radius="0.011" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
-      <a-sphere id="tPile2" position="-0.022 0.075 -0.048" radius="0.008" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
-      <a-sphere id="tPile3" position="0.022 0.075 -0.048"  radius="0.008" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
-      <a-sphere id="tPile4" position="0 -0.030 -0.048"     radius="0.007" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
+      <!-- ⑤ 鏝面のモルタル: blade 中央に細長い盛り(ellipsoid)。scaleのX/Y/Zを独立に制御 -->
+      <a-sphere id="tRidge" position="0 0.010 -0.052" radius="0.010" scale="0.1 0.1 0.1" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
     </a-entity>
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
@@ -255,16 +252,18 @@
     const r=trowelMortar/TMAX;
     const tv=document.getElementById('tMV');
     if(tv){tv.setAttribute('material',`color:#828278;roughness:0.9;metalness:0;opacity:${(r*0.92).toFixed(2)};transparent:true`);}
-    /* ⑤ 鏝先の盛り: モルタル量に応じて scale と opacity を連動、盛りは非線形（少量でも小さく見える）*/
-    const pileScale=(0.10+Math.pow(r,0.8)*0.90).toFixed(3);
-    const pileOpac =(Math.min(1,r*1.1)*0.9).toFixed(2);
-    ['tPile1','tPile2','tPile3','tPile4'].forEach(id=>{
-      const el=document.getElementById(id);
-      if(el){
-        el.setAttribute('scale',`${pileScale} ${pileScale} ${pileScale}`);
-        el.setAttribute('material',`color:#5a544e;roughness:0.88;metalness:0;opacity:${pileOpac};transparent:true`);
-      }
-    });
+    /* ⑤ 鏝面のモルタル: 中央に細長い盛り(ellipsoid) — 量に応じて長さ・幅・高さがそれぞれ非線形に膨らむ
+       X(幅): 0.15→1.5   Y(長さ): 0.20→3.8   Z(盛り高さ): 0.10→0.70
+       radius=0.010 の base sphere が、満載時に 3cm×7.6cm×1.4cm 程度のカマボコ形になる */
+    const rp=Math.pow(r,0.7);
+    const sxW=(0.15+rp*1.35).toFixed(3);
+    const syL=(0.20+rp*3.60).toFixed(3);
+    const szD=(0.10+rp*0.60).toFixed(3);
+    const rEl=document.getElementById('tRidge');
+    if(rEl){
+      rEl.setAttribute('scale',`${sxW} ${syL} ${szD}`);
+      rEl.setAttribute('material',`color:#5a544e;roughness:0.88;metalness:0;opacity:${(Math.min(1,r*1.1)*0.9).toFixed(2)};transparent:true`);
+    }
     requestHUD();
   }
   /* ③ サウンド: 塗り(wet)と均し(dry)の2モード
