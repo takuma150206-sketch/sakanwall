@@ -46,6 +46,7 @@
     tick:function(){
       const now=performance.now();
       if(now-this.lastTick<16)return;this.lastTick=now;
+      window._contactActive=false;   /* ④ 角度指標: 各tick冒頭でリセット、実際に塗る時のみtrue */
       const sc=document.querySelector('a-scene');
       const isXR=sc.is('vr-mode')||sc.is('ar-mode');
       const o=this.el.object3D;if(!o)return;
@@ -108,15 +109,28 @@
       else snd.upd(this.spd,mode);
       const p=painters[hitIdx];
       const spdF=Math.max(0,Math.min(1,this.spd/15));
+      /* ④ コテの角度判定: blade の -Z (this._fwd) と壁面法線 (0,0,1) の角度で塗り品質を変化
+         10〜25° の範囲で最大品質、平らすぎ／立ちすぎで塗り係数を落とし、触覚も控えめに */
+      const tiltCos=Math.max(-1,Math.min(1,-this._fwd.z));  /* 1=blade垂直に押し当て, cos(15°)≒0.966=適正 */
+      const tiltDeg=Math.acos(tiltCos)*180/Math.PI;
+      let angleFactor;
+      if(tiltDeg<5)       angleFactor=0.4;   /* 平らすぎて材料が伸びない */
+      else if(tiltDeg<10) angleFactor=0.7;   /* やや浅い */
+      else if(tiltDeg<=25)angleFactor=1.0;   /* 適正な塗り角度 */
+      else if(tiltDeg<=35)angleFactor=0.7;   /* やや深い */
+      else                angleFactor=0.4;   /* 立ちすぎ、削れる */
+      window._angleDeg=tiltDeg;
+      window._angleFactor=angleFactor;
+      window._contactActive=true;
       if(mode==='smooth'){
         smoothSurface(p,uvs);
-        /* 均し: 乾いた抵抗感、速度で強度が変わる（v5.4 更新: 全体的に強めに）*/
+        /* 均し: 乾いた抵抗感、速度で強度が変わる */
         haptic(0.08+spdF*0.15, 20+Math.round((1-spdF)*15));
       }else{
-        paintSurface(p,uvs);
-        /* 塗り: モルタル量と速度で強度・パルス長が変わる（v5.4 更新: 満載時の手応えを強化）*/
+        paintSurface(p,uvs,angleFactor);
+        /* 塗り: モルタル量と速度で強度・パルス長が変わる。角度適正なら触覚+15%で「気持ちよさ」を明示 */
         const mortarF = 0.12 + 0.25 * (trowelMortar/TMAX);
-        haptic(mortarF, Math.round(35 - spdF*15));
+        haptic(mortarF*(angleFactor>=0.95?1.15:1.0), Math.round(35 - spdF*15));
       }
       /* ② モルタルが今このtickで0になった瞬間の「カリッ」 */
       if(trowelMortar===0 && this._wasHadMortar){
@@ -141,14 +155,14 @@
   </style>
 </head>
 <body>
-  <div id="ver">v5.4 道場 (湿り感 tuned)</div>
+  <div id="ver">v5.4 道場 (角度判定+盛り)</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
     得点基準: 5mm = 100点<br>
-    ① 湿ったモルタルの艶<br>
-    ② 触覚が量・速度で変化<br>
-    ③ 塗り／均しで音が分かれる
+    ①艶 ②触覚 ③音<br>
+    ④ コテの角度 10〜25° で塗り品質最大<br>
+    ⑤ 鏝先にモルタルの盛り
   </div>
   <button id="btn" disabled>確認中...</button>
   <div id="st">確認中...</div>
@@ -192,6 +206,11 @@
       <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
       <a-box id="tMV" position="0 0.035 -0.046" width="0.080" height="0.198" depth="0.006" color="#828278"
              material="roughness:0.9;metalness:0;opacity:0;transparent:true;"></a-box>
+      <!-- ⑤ 鏝先モルタルの盛り: 4つのblob、scale/opacity をモルタル量と連動 -->
+      <a-sphere id="tPile1" position="0 0.150 -0.048"     radius="0.011" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
+      <a-sphere id="tPile2" position="-0.022 0.075 -0.048" radius="0.008" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
+      <a-sphere id="tPile3" position="0.022 0.075 -0.048"  radius="0.008" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
+      <a-sphere id="tPile4" position="0 -0.030 -0.048"     radius="0.007" scale="0.001 0.001 0.001" color="#5a544e" material="roughness:0.88;metalness:0;transparent:true;opacity:0;"></a-sphere>
     </a-entity>
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
@@ -233,8 +252,19 @@
   function updMortar(){
     const hv=document.getElementById('hMV');
     if(hv){const r=Math.max(0.02,hawkMortar/100);hv.setAttribute('scale',`${r*0.22} ${r*0.05} ${r*0.22}`);}
+    const r=trowelMortar/TMAX;
     const tv=document.getElementById('tMV');
-    if(tv){const r=trowelMortar/TMAX;tv.setAttribute('material',`color:#828278;roughness:0.9;metalness:0;opacity:${(r*0.92).toFixed(2)};transparent:true`);}
+    if(tv){tv.setAttribute('material',`color:#828278;roughness:0.9;metalness:0;opacity:${(r*0.92).toFixed(2)};transparent:true`);}
+    /* ⑤ 鏝先の盛り: モルタル量に応じて scale と opacity を連動、盛りは非線形（少量でも小さく見える）*/
+    const pileScale=(0.10+Math.pow(r,0.8)*0.90).toFixed(3);
+    const pileOpac =(Math.min(1,r*1.1)*0.9).toFixed(2);
+    ['tPile1','tPile2','tPile3','tPile4'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el){
+        el.setAttribute('scale',`${pileScale} ${pileScale} ${pileScale}`);
+        el.setAttribute('material',`color:#5a544e;roughness:0.88;metalness:0;opacity:${pileOpac};transparent:true`);
+      }
+    });
     requestHUD();
   }
   /* ③ サウンド: 塗り(wet)と均し(dry)の2モード
@@ -453,8 +483,9 @@
   }
   /* 塗り */
   const MR=82,MG=80,MB=75;
-  function paintSurface(p,uvs){
+  function paintSurface(p,uvs,angleFactor){
     if(uvs.length<2||trowelMortar<=0)return;
+    angleFactor=angleFactor||1.0;   /* ④ 角度が適正なら 1.0、外れているほど 0.4 まで下がる */
     const ctx=p.ctx,W=p.W,H=p.H;
     const pts=uvs.map(u=>({x:u.x*W,y:(1-u.y)*H}));
     const f=pts[0],l=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)],muv=uvs[Math.floor(uvs.length/2)];
@@ -462,7 +493,7 @@
     let spd=0;
     if(p.lastUV){const dx=(muv.x-p.lastUV.x)*W,dy=-(muv.y-p.lastUV.y)*H;spd=Math.sqrt(dx*dx+dy*dy);}
     p.lastUV={x:muv.x,y:muv.y};
-    const sf=(0.25+Math.random()*0.75)*(1-Math.max(0,Math.min(1,spd/18))*0.55);
+    const sf=(0.25+Math.random()*0.75)*(1-Math.max(0,Math.min(1,spd/18))*0.55)*angleFactor;
     const sw=26+Math.min(spd*1.2,14);
     const it=Math.min(1,trowelMortar/(TMAX*0.25));
     const cr=Math.round(MR-sf*18),cg=Math.round(MG-sf*16),cb=Math.round(MB-sf*14);
@@ -714,16 +745,31 @@
     ctx.font='bold 16px "Yu Mincho","Hiragino Mincho ProN",serif';
     ctx.textAlign='left';
     ctx.fillText('鏝板',W*0.18,478);
-    ctx.fillText('モルタル',W*0.18,502);
+    ctx.fillText('モルタル',W*0.18,500);
     ctx.textAlign='right';
     ctx.fillText(`${Math.floor(hawkMortar)} %`,W*0.82,478);
-    ctx.fillText(`${Math.floor(trowelMortar/TMAX*100)} %`,W*0.82,502);
+    ctx.fillText(`${Math.floor(trowelMortar/TMAX*100)} %`,W*0.82,500);
+    /* ④ 角度指標（接触中のみ表示）*/
+    if(window._contactActive){
+      const deg=window._angleDeg||0;
+      const factor=window._angleFactor||1.0;
+      let label,col;
+      if(factor>=0.95){label='良';col='#2a8a20';}
+      else if(deg<10){label='浅い';col='#a06010';}
+      else if(deg>25){label='立ち過ぎ';col='#a02020';}
+      else{label='要調整';col='#a06010';}
+      ctx.textAlign='left';ctx.fillStyle='#3a1a05';
+      ctx.font='bold 15px "Yu Mincho","Hiragino Mincho ProN",serif';
+      ctx.fillText('角度',W*0.18,522);
+      ctx.textAlign='right';ctx.fillStyle=col;
+      ctx.fillText(`${Math.round(deg)}° ${label}`,W*0.82,522);
+    }
     /* メッセージ */
     if(hudMsg){
       ctx.fillStyle='#a02808';
       ctx.font='bold 20px "Yu Mincho","Hiragino Mincho ProN",serif';
       ctx.textAlign='center';
-      ctx.fillText('〘 '+hudMsg+' 〙',W/2,532);
+      ctx.fillText('〘 '+hudMsg+' 〙',W/2,540);
     }
     if(hudTex)hudTex.needsUpdate=true;
   }
