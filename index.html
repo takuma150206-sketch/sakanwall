@@ -254,12 +254,8 @@
       <a-cylinder position="0 0.045 0" radius="0.013" height="0.008" color="#7A7A7A" material="metalness:0.7;roughness:0.4;"></a-cylinder>
       <a-cylinder position="0 0 -0.020" radius="0.007" height="0.040" rotation="90 0 0" color="#888" material="metalness:0.80;roughness:0.28;"></a-cylinder>
       <a-entity blade-shape position="0 0.035 -0.042"></a-entity>
-      <a-box id="tMV" position="0 0.035 -0.046" width="0.080" height="0.198" depth="0.006" color="#828278"
-             material="roughness:0.9;metalness:0;opacity:0;transparent:true;"></a-box>
-      <!-- ⑤ 鏝面のモルタル: 実物写真参照でゴツゴツした塊に作り直し。主体+2副球で不規則な silhouette -->
-      <a-sphere id="tRidge" position="0 0.010 -0.053" radius="0.012" scale="0.1 0.1 0.1" color="#857f78" material="roughness:0.85;metalness:0;transparent:true;opacity:0;"></a-sphere>
-      <a-sphere id="tLump1" position="0.012 0.022 -0.057" radius="0.008" scale="0.1 0.1 0.1" color="#7a7469" material="roughness:0.85;metalness:0;transparent:true;opacity:0;"></a-sphere>
-      <a-sphere id="tLump2" position="-0.010 -0.008 -0.056" radius="0.008" scale="0.1 0.1 0.1" color="#928d84" material="roughness:0.85;metalness:0;transparent:true;opacity:0;"></a-sphere>
+      <!-- ⑤ 鏝面のモルタル: 鏝の左側(x=-0.020)に、先端-末端(y=-0.085〜0.115 の rectangular 部分の中心 y=0.015 に配置)まで細長い1本の ellipsoid で表現。従来の tMV/tRidge/tLumps は廃止 -->
+      <a-sphere id="tMortar" position="-0.020 0.015 -0.052" radius="0.012" scale="0.1 0.1 0.1" color="#857f78" material="roughness:0.85;metalness:0;transparent:true;opacity:0;"></a-sphere>
     </a-entity>
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
@@ -306,33 +302,18 @@
     const hv=document.getElementById('hMV');
     if(hv){const r=Math.max(0.02,hawkMortar/100);hv.setAttribute('scale',`${r*0.22} ${r*0.05} ${r*0.22}`);}
     const r=trowelMortar/TMAX;
-    const tv=document.getElementById('tMV');
-    if(tv){tv.setAttribute('material',`color:#828278;roughness:0.9;metalness:0;opacity:${(r*0.92).toFixed(2)};transparent:true`);}
-    /* ⑤ 鏝面のモルタル: 主体ellipsoid + 2副球で不規則な塊状の silhouette
-       radius=0.012 の base sphere が満載時に幅6.7cm × 長さ7.2cm × 盛り高さ2.9cm のカマボコに膨らむ
-       副球 (radius 0.008) は主体の縁に膨らみを加えて silhouette を不規則にする */
+    /* ⑤ 鏝面のモルタル: 鏝の左側先端-末端に細長い1本の ellipsoid
+       radius=0.012 の base sphere が満載時に 幅24mm × 長さ204mm × 盛り高さ13mm の細長カマボコに */
     const rp=Math.pow(r,0.7);
     const opac=(Math.min(1,r*1.1)*0.9).toFixed(2);
-    /* 主体: 幅と長さを近づけてcompact chunky に */
-    const mainX=(0.15+rp*2.65).toFixed(3);  /* 0.15→2.8 → 幅 6.7cm */
-    const mainY=(0.20+rp*2.80).toFixed(3);  /* 0.20→3.0 → 長さ 7.2cm */
-    const mainZ=(0.10+rp*1.10).toFixed(3);  /* 0.10→1.2 → 盛り高さ 2.9cm */
-    const rEl=document.getElementById('tRidge');
-    if(rEl){
-      rEl.setAttribute('scale',`${mainX} ${mainY} ${mainZ}`);
-      rEl.setAttribute('material',`color:#857f78;roughness:0.85;metalness:0;opacity:${opac};transparent:true`);
+    const sxW=(0.15+rp*0.85).toFixed(3);  /* 幅 X: 0.15→1.0 */
+    const syL=(0.30+rp*8.20).toFixed(3);  /* 長さ Y: 0.30→8.5 → 先端-末端 */
+    const szD=(0.10+rp*0.45).toFixed(3);  /* 盛り高さ Z: 0.10→0.55 */
+    const mEl=document.getElementById('tMortar');
+    if(mEl){
+      mEl.setAttribute('scale',`${sxW} ${syL} ${szD}`);
+      mEl.setAttribute('material',`color:#857f78;roughness:0.85;metalness:0;opacity:${opac};transparent:true`);
     }
-    /* 副球: 主体より少し小さめ、silhouette を崩す。色も少しずつ変える */
-    const lumpScale=(0.10+rp*1.90).toFixed(3);
-    const lumpOpac=(Math.min(1,r*1.05)*0.85).toFixed(2);
-    ['tLump1','tLump2'].forEach(id=>{
-      const el=document.getElementById(id);
-      if(el){
-        const col=(id==='tLump1')?'#7a7469':'#928d84';
-        el.setAttribute('scale',`${lumpScale} ${lumpScale} ${lumpScale}`);
-        el.setAttribute('material',`color:${col};roughness:0.85;metalness:0;opacity:${lumpOpac};transparent:true`);
-      }
-    });
     requestHUD();
   }
   /* ③ サウンド: 塗り(wet)と均し(dry)の2モード
