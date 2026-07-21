@@ -244,28 +244,28 @@
     init(){if(this.ctx)return;try{this.ctx=new(window.AudioContext||window.webkitAudioContext)();
       const sr=this.ctx.sampleRate,b=this.ctx.createBuffer(1,sr,sr),d=b.getChannelData(0);
       for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;this.nb=b;}catch(e){}},
-    /* v5.4 tuning 6: paint/smooth も「細かい砂粒感」に統一。
-       - 全層で playbackRate を大幅に上げて粒サイズを縮小（0.55-1.15 → 1.0-1.5）
-       - フィルタ帯域も上シフト（低域body減、細かい高域粒を前に）
-       - 主層 lowpass 天井は速度で変調（速いほど明るく）を維持 */
-    _paintFreq(spd){return 2600+Math.min(spd,20)*100;},    /* 主層 lowpass 天井 (paint: 2600-4600 Hz) */
-    _smoothFreq(spd){return 4800+Math.min(spd,20)*160;},   /* 主層 lowpass 天井 (smooth: 4800-8000 Hz) */
+    /* v5.4 tuning 7: 実物の左官コテ返し動画（youtube 参照）に寄せて、大幅に低域・湿った方向へシフト。
+       - 高域ガリガリ寄りだったのを、中低域body重視に転換
+       - playbackRate を 1.1-1.5 から 0.95-1.2 に落として粒を少しゆったり戻す
+       - HP を大きく下げて body を復活 */
+    _paintFreq(spd){return 2000+Math.min(spd,20)*80;},    /* 主層 lowpass 天井 (paint: 2000-3600 Hz) */
+    _smoothFreq(spd){return 3500+Math.min(spd,20)*130;},  /* 主層 lowpass 天井 (smooth: 3500-6100 Hz) */
     start(spd,mode){if(!this.ctx||!this.nb)return;this.stop();
       this.mode=mode;
       const isPaint=mode==='paint';
       const now=this.ctx.currentTime;
-      /* 主層: HP+LP の帯域通過（Q なし = 広帯域）、playbackRate を上げて粒を細かく */
+      /* 主層: HP+LP の帯域通過、湿った body を残す */
       const s=this.ctx.createBufferSource();s.buffer=this.nb;s.loop=true;
-      s.playbackRate.value=isPaint?1.1:1.5;  /* 全体的に高め = 粒サイズを縮小 */
+      s.playbackRate.value=isPaint?0.95:1.2;
       this.fnHP=this.ctx.createBiquadFilter();this.fnHP.type='highpass';
-      this.fnHP.frequency.value=isPaint?500:1000;  /* 低域切り上げて body を減らす */
+      this.fnHP.frequency.value=isPaint?300:600;  /* HP を大きく下げて中低域body復活 */
       this.fn=this.ctx.createBiquadFilter();this.fn.type='lowpass';
       this.fn.frequency.value=isPaint?this._paintFreq(spd):this._smoothFreq(spd);
-      /* grit層: 中〜高域 bandpass 低Q + やや高 playbackRate = 細かい砂粒 */
+      /* grit層: 中域 bandpass 低Q + playbackRate ≈1 */
       const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.loop=true;
-      s2.playbackRate.value=isPaint?1.0:1.3;
+      s2.playbackRate.value=isPaint?0.9:1.1;
       const sec=this.ctx.createBiquadFilter();sec.type='bandpass';
-      sec.frequency.value=isPaint?1800:3400;  /* 上シフトで細かく */
+      sec.frequency.value=isPaint?1200:2500;
       sec.Q.value=3;
       const sg=this.ctx.createGain();sg.gain.value=isPaint?0.08:0.07;
       this.gn=this.ctx.createGain();this.gn.gain.setValueAtTime(0,now);
@@ -281,37 +281,56 @@
     stop(){if(!this.nd)return;try{this.gn.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
       const n=this.nd,n2=this.nd2;setTimeout(()=>{try{n.stop();}catch(e){}try{n2?.stop();}catch(e){}},200);}catch(e){}
       this.nd=this.nd2=this.gn=this.fn=this.fnHP=null;this.mode=null;},
-    /* v5.4 tuning 6: 「ガリッ」→「細かい砂粒感」に寄せる。
-       全層で playbackRate を上げ（粒サイズを縮小）、フィルタ帯域も上シフト（低域body減、高域粒感重視）*/
+    /* v5.4 tuning 7: 全レイヤー同時発火の方式をやめて、時間差で 5 フェーズの物理動作を再現。
+       ① 金属接触 → ② 擦り → ③ 湿ったモルタル持ち上げ（低域body復活）→ ④ 湿った中域 → ⑤ スロップ尾音 */
     playKG(){if(!this.ctx||!this.nb)return;
       const now=this.ctx.currentTime;
       const dest=this.ctx.destination;
-      /* Layer 1: 立ち上がりの鋭いカリッ - highpass 3500Hz, playbackRate 2.6 の高い短パルス */
-      const s=this.ctx.createBufferSource();s.buffer=this.nb;s.playbackRate.value=2.6;
-      const f=this.ctx.createBiquadFilter();f.type='highpass';f.frequency.value=3500;
-      const g=this.ctx.createGain();
-      g.gain.setValueAtTime(0.60,now);
-      g.gain.exponentialRampToValueAtTime(0.001,now+0.025);
-      s.connect(f);f.connect(g);g.connect(dest);
-      s.start(now);s.stop(now+0.03);
-      /* Layer 2: 主音本体 - 帯域を 1300-7000Hz に上シフト、playbackRate 1.4 で細かく */
-      const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.playbackRate.value=1.4;
-      const f2a=this.ctx.createBiquadFilter();f2a.type='highpass';f2a.frequency.value=1300;
-      const f2b=this.ctx.createBiquadFilter();f2b.type='lowpass';f2b.frequency.value=7000;
+      /* Phase 1 (0-25ms): 鏝縁が鏝板に当たる金属接触音 - BP 1200Hz Q=3 の重いクリック */
+      const s1=this.ctx.createBufferSource();s1.buffer=this.nb;s1.playbackRate.value=1.5;
+      const f1=this.ctx.createBiquadFilter();f1.type='bandpass';f1.frequency.value=1200;f1.Q.value=3;
+      const g1=this.ctx.createGain();
+      g1.gain.setValueAtTime(0.55,now);
+      g1.gain.exponentialRampToValueAtTime(0.001,now+0.020);
+      s1.connect(f1);f1.connect(g1);g1.connect(dest);
+      s1.start(now);s1.stop(now+0.025);
+      /* Phase 2 (20-80ms): 引き剥がす金属擦り音 - HP 1500 + LP 5000 の broadband、遅れて立ち上がる */
+      const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.playbackRate.value=1.3;
+      const f2a=this.ctx.createBiquadFilter();f2a.type='highpass';f2a.frequency.value=1500;
+      const f2b=this.ctx.createBiquadFilter();f2b.type='lowpass';f2b.frequency.value=5000;
       const g2=this.ctx.createGain();
-      g2.gain.setValueAtTime(0.52,now);
-      g2.gain.exponentialRampToValueAtTime(0.001,now+0.13);
+      g2.gain.setValueAtTime(0,now);
+      g2.gain.linearRampToValueAtTime(0.42,now+0.020);
+      g2.gain.exponentialRampToValueAtTime(0.001,now+0.075);
       s2.connect(f2a);f2a.connect(f2b);f2b.connect(g2);g2.connect(dest);
-      s2.start(now);s2.stop(now+0.15);
-      /* Layer 3: 細かい砂粒 - bandpass 3800Hz Q=4、playbackRate 1.6 で細粒 */
-      const s3=this.ctx.createBufferSource();s3.buffer=this.nb;s3.playbackRate.value=1.6;
-      const f3=this.ctx.createBiquadFilter();f3.type='bandpass';
-      f3.frequency.value=3800;f3.Q.value=4;
+      s2.start(now);s2.stop(now+0.080);
+      /* Phase 3 (70-180ms): 湿ったモルタルが持ち上がる低域 body - LP 500Hz、後半に膨らむ */
+      const s3=this.ctx.createBufferSource();s3.buffer=this.nb;s3.playbackRate.value=0.9;
+      const f3=this.ctx.createBiquadFilter();f3.type='lowpass';f3.frequency.value=500;
       const g3=this.ctx.createGain();
-      g3.gain.setValueAtTime(0.40,now);
-      g3.gain.exponentialRampToValueAtTime(0.001,now+0.11);
+      g3.gain.setValueAtTime(0,now);
+      g3.gain.linearRampToValueAtTime(0.45,now+0.075);
+      g3.gain.exponentialRampToValueAtTime(0.001,now+0.170);
       s3.connect(f3);f3.connect(g3);g3.connect(dest);
-      s3.start(now);s3.stop(now+0.13);}
+      s3.start(now);s3.stop(now+0.180);
+      /* Phase 4 (65-155ms): 湿った中域のグルル - BP 700Hz Q=4、playbackRate 0.7 で粗い */
+      const s4=this.ctx.createBufferSource();s4.buffer=this.nb;s4.playbackRate.value=0.7;
+      const f4=this.ctx.createBiquadFilter();f4.type='bandpass';f4.frequency.value=700;f4.Q.value=4;
+      const g4=this.ctx.createGain();
+      g4.gain.setValueAtTime(0,now);
+      g4.gain.linearRampToValueAtTime(0.30,now+0.070);
+      g4.gain.exponentialRampToValueAtTime(0.001,now+0.150);
+      s4.connect(f4);f4.connect(g4);g4.connect(dest);
+      s4.start(now);s4.stop(now+0.160);
+      /* Phase 5 (150-200ms): 尾音のスロップ - LP 300Hz、モルタルが鏝に「ペタッ」と落ちる */
+      const s5=this.ctx.createBufferSource();s5.buffer=this.nb;s5.playbackRate.value=0.85;
+      const f5=this.ctx.createBiquadFilter();f5.type='lowpass';f5.frequency.value=300;
+      const g5=this.ctx.createGain();
+      g5.gain.setValueAtTime(0,now);
+      g5.gain.linearRampToValueAtTime(0.25,now+0.150);
+      g5.gain.exponentialRampToValueAtTime(0.001,now+0.190);
+      s5.connect(f5);f5.connect(g5);g5.connect(dest);
+      s5.start(now);s5.stop(now+0.200);}
   };
   /* 壁・塗代ガイド配置 */
   function placeWalls(cx,cz){
