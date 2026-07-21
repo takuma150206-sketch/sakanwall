@@ -110,13 +110,13 @@
       const spdF=Math.max(0,Math.min(1,this.spd/15));
       if(mode==='smooth'){
         smoothSurface(p,uvs);
-        /* 均し: 乾いた抵抗感、速度で強度が変わる */
-        haptic(0.05+spdF*0.10, 15+Math.round((1-spdF)*15));
+        /* 均し: 乾いた抵抗感、速度で強度が変わる（v5.4 更新: 全体的に強めに）*/
+        haptic(0.08+spdF*0.15, 20+Math.round((1-spdF)*15));
       }else{
         paintSurface(p,uvs);
-        /* 塗り: モルタル量と速度で強度・パルス長が変わる */
-        const mortarF = 0.08 + 0.18 * (trowelMortar/TMAX);
-        haptic(mortarF, Math.round(30 - spdF*15));
+        /* 塗り: モルタル量と速度で強度・パルス長が変わる（v5.4 更新: 満載時の手応えを強化）*/
+        const mortarF = 0.12 + 0.25 * (trowelMortar/TMAX);
+        haptic(mortarF, Math.round(35 - spdF*15));
       }
       /* ② モルタルが今このtickで0になった瞬間の「カリッ」 */
       if(trowelMortar===0 && this._wasHadMortar){
@@ -141,7 +141,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v5.4 道場 (湿り感)</div>
+  <div id="ver">v5.4 道場 (湿り感 tuned)</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -200,9 +200,9 @@
       <a-cylinder position="0 -0.065 -0.15" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
       <a-sphere id="hMV" position="0 0.022 -0.15" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
     </a-entity>
-    <a-light type="ambient" intensity="0.65"></a-light>
-    <a-light type="directional" intensity="0.95" position="1 2 1"></a-light>
-    <a-light type="directional" intensity="0.30" position="-1 1 0.5" color="#c8d8ff"></a-light>
+    <a-light type="ambient" intensity="0.60"></a-light>
+    <a-light type="directional" intensity="1.20" position="1 2 1"></a-light>
+    <a-light type="directional" intensity="0.35" position="-1 1 0.5" color="#c8d8ff"></a-light>
   </a-scene>
   <script>
   /* WebXR */
@@ -270,17 +270,39 @@
     stop(){if(!this.nd)return;try{this.gn.gain.setTargetAtTime(0,this.ctx.currentTime,0.04);
       const n=this.nd,n2=this.nd2;setTimeout(()=>{try{n.stop();}catch(e){}try{n2?.stop();}catch(e){}},200);}catch(e){}
       this.nd=this.nd2=this.gn=this.fn=null;this.mode=null;},
+    /* v5.4 更新: 「ドン」→「ザクッ」。低音 thump を廃止、金属擦れの主音＋高域グリット＋末尾の湿ったスロップ */
     playKG(){if(!this.ctx||!this.nb)return;
       const now=this.ctx.currentTime;
-      const s=this.ctx.createBufferSource();s.buffer=this.nb;
-      const f=this.ctx.createBiquadFilter();f.type='lowpass';
-      f.frequency.setValueAtTime(600,now);f.frequency.exponentialRampToValueAtTime(80,now+0.22);
-      const g=this.ctx.createGain();g.gain.setValueAtTime(0.70,now);g.gain.exponentialRampToValueAtTime(0.001,now+0.32);
-      s.connect(f);f.connect(g);g.connect(this.ctx.destination);s.start(now);s.stop(now+0.35);
-      const s2=this.ctx.createBufferSource();s2.buffer=this.nb;
-      const f2=this.ctx.createBiquadFilter();f2.type='bandpass';f2.frequency.value=2200;f2.Q.value=2;
-      const g2=this.ctx.createGain();g2.gain.setValueAtTime(0.40,now);g2.gain.exponentialRampToValueAtTime(0.001,now+0.07);
-      s2.connect(f2);f2.connect(g2);g2.connect(this.ctx.destination);s2.start(now);s2.stop(now+0.09);}
+      /* 主音: 鏝板を鏝で擦る「ザクッ」 - bandpass 1500→700Hz の下降スイープ */
+      const s=this.ctx.createBufferSource();s.buffer=this.nb;s.playbackRate.value=1.2;
+      const f=this.ctx.createBiquadFilter();f.type='bandpass';
+      f.frequency.setValueAtTime(1500,now);
+      f.frequency.exponentialRampToValueAtTime(700,now+0.14);
+      f.Q.value=5;
+      const g=this.ctx.createGain();
+      g.gain.setValueAtTime(0.60,now);
+      g.gain.exponentialRampToValueAtTime(0.001,now+0.22);
+      s.connect(f);f.connect(g);g.connect(this.ctx.destination);
+      s.start(now);s.stop(now+0.24);
+      /* 副音: 立ち上がり 80ms だけの高域グリット（金属の細かい引っかき）*/
+      const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.playbackRate.value=1.4;
+      const f2=this.ctx.createBiquadFilter();f2.type='highpass';
+      f2.frequency.value=1600;
+      const g2=this.ctx.createGain();
+      g2.gain.setValueAtTime(0.35,now);
+      g2.gain.exponentialRampToValueAtTime(0.001,now+0.08);
+      s2.connect(f2);f2.connect(g2);g2.connect(this.ctx.destination);
+      s2.start(now);s2.stop(now+0.10);
+      /* 尾音: 後半だけモルタルを掬い上げた瞬間の軽いスロップ */
+      const s3=this.ctx.createBufferSource();s3.buffer=this.nb;
+      const f3=this.ctx.createBiquadFilter();f3.type='lowpass';
+      f3.frequency.value=380;
+      const g3=this.ctx.createGain();
+      g3.gain.setValueAtTime(0,now);
+      g3.gain.linearRampToValueAtTime(0.15,now+0.12);
+      g3.gain.exponentialRampToValueAtTime(0.001,now+0.24);
+      s3.connect(f3);f3.connect(g3);g3.connect(this.ctx.destination);
+      s3.start(now);s3.stop(now+0.26);}
   };
   /* 壁・塗代ガイド配置 */
   function placeWalls(cx,cz){
@@ -345,11 +367,12 @@
       mesh.material.displacementMap=p.heightTex;
       mesh.material.displacementScale=0.010;
       mesh.material.displacementBias=0;
-      /* ① roughnessMap を割り当て — 塗った直後だけ濡れた質感 */
+      /* ① roughnessMap＋metalnessMap を同一テクスチャで割り当て — 塗った直後だけ濡れた質感（強化） */
       p.roughnessTex=new THREE.CanvasTexture(document.getElementById(RIDS[i]));
       mesh.material.roughnessMap=p.roughnessTex;
+      mesh.material.metalnessMap=p.roughnessTex;
       mesh.material.roughness=1.0;
-      mesh.material.metalness=0.05;
+      mesh.material.metalness=1.0;   /* base=1.0、metalnessMap.b で乗算されて実効値に */
       mesh.material.needsUpdate=true;
     });
     /* HUD テクスチャ */
@@ -361,12 +384,12 @@
     prepareWashi();drawOps();drawHUD();
     /* HUD 保険 + ① 濡れの経時的な乾き */
     setInterval(()=>{
-      /* ① wetness decay: 半減期 ~15秒（0.977^30 ≒ 0.5）*/
+      /* ① wetness decay: 半減期 ~25秒（艶感の余韻を長めに）*/
       painters.forEach(p=>{
         let anyWet=false;
         for(let i=0;i<p.wetnessData.length;i++){
           if(p.wetnessData[i]>0.005){
-            p.wetnessData[i]*=0.977;
+            p.wetnessData[i]*=0.9863;
             anyWet=true;
           }else if(p.wetnessData[i]!==0){
             p.wetnessData[i]=0;anyWet=true;
@@ -386,16 +409,16 @@
     }
     p.hc.putImageData(p.htImg,0,0);if(p.heightTex)p.heightTex.needsUpdate=true;
   }
-  /* ① 湿り度 → roughness テクスチャ更新
-     roughnessMap は緑チャンネルを roughness に乗じる。
-     wet=1 → green=90 (roughness=1.0×0.35=0.35 → ツヤ)
-     dry=0 → green=240 (roughness=1.0×0.94=0.94 → マット) */
+  /* ① 湿り度 → roughness＋metalness テクスチャ更新（v5.4 強化版: レンジ大幅拡大＋metalnessMap 追加）
+     緑ch: roughness  (wet=25 → 実効 0.10 でしっかりツヤ、dry=248 → 0.97 でしっかりマット)
+     青ch: metalness  (wet=40 → 実効 0.16、dry=5 → 0.02) — わずかな金属感を足して反射を強化 */
   function renderRh(p){
     const d=p.rhImg.data;
     for(let i=0;i<p.wetnessData.length;i++){
       const w=Math.max(0,Math.min(1,p.wetnessData[i]));
-      const g=Math.round(90+(1-w)*150);
-      d[i*4]=g;d[i*4+1]=g;d[i*4+2]=g;d[i*4+3]=255;
+      const green=Math.round(25+(1-w)*223);
+      const blue =Math.round( 5+w*35);
+      d[i*4]=0;d[i*4+1]=green;d[i*4+2]=blue;d[i*4+3]=255;
     }
     p.rhc.putImageData(p.rhImg,0,0);
     if(p.roughnessTex)p.roughnessTex.needsUpdate=true;
