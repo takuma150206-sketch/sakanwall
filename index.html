@@ -303,12 +303,12 @@
     if(hv){const r=Math.max(0.02,hawkMortar/100);hv.setAttribute('scale',`${r*0.22} ${r*0.05} ${r*0.22}`);}
     const r=trowelMortar/TMAX;
     /* ⑤ 鏝面のモルタル: 鏝の左側先端-末端に細長い1本の ellipsoid
-       radius=0.012 の base sphere が満載時に 幅24mm × 長さ204mm × 盛り高さ13mm の細長カマボコに */
+       radius=0.012 の base sphere が満載時に 幅31mm × 長さ240mm × 盛り高さ19mm の細長カマボコに */
     const rp=Math.pow(r,0.7);
     const opac=(Math.min(1,r*1.1)*0.9).toFixed(2);
-    const sxW=(0.15+rp*0.85).toFixed(3);  /* 幅 X: 0.15→1.0 */
-    const syL=(0.30+rp*8.20).toFixed(3);  /* 長さ Y: 0.30→8.5 → 先端-末端 */
-    const szD=(0.10+rp*0.45).toFixed(3);  /* 盛り高さ Z: 0.10→0.55 */
+    const sxW=(0.15+rp*1.15).toFixed(3);  /* 幅 X: 0.15→1.30 */
+    const syL=(0.30+rp*9.70).toFixed(3);  /* 長さ Y: 0.30→10.0 → 先端-末端 */
+    const szD=(0.10+rp*0.70).toFixed(3);  /* 盛り高さ Z: 0.10→0.80 */
     const mEl=document.getElementById('tMortar');
     if(mEl){
       mEl.setAttribute('scale',`${sxW} ${syL} ${szD}`);
