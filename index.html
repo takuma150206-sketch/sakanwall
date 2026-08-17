@@ -39,6 +39,7 @@
         o.getWorldPosition(this._tp);
         placeWalls(this._tp.x, this._tp.z);
         painters.forEach(p=>resetPainter(p));
+        sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
         setMsg('壁を設置');
       });
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
@@ -69,7 +70,7 @@
           if(this.hma>Math.PI*0.22&&hawkMortar>0){
             const amt=Math.min(50,hawkMortar);hawkMortar=Math.max(0,hawkMortar-amt);
             trowelMortar=Math.min(78,trowelMortar+amt);
-            this.kgd=true;this.heq=null;this.hma=0;
+            this.kgd=true;this.heq=null;this.hma=0;kaeshiCount++;
             updMortar();setMsg('コテ返し');haptic(0.55,150);snd.playKG();
           }
         }else{this.heq=null;this.hma=0;}
@@ -130,6 +131,7 @@
         /* 均し: 乾いた抵抗感、速度で強度が変わる */
         haptic(0.08+spdF*0.15, 20+Math.round((1-spdF)*15));
       }else{
+        angleTotalTicks++;if(angleFactor>=0.95)angleGoodTicks++;
         paintSurface(p,uvs,angleFactor);
         /* 塗り: モルタル量と速度で強度・パルス長が変わる。角度適正なら触覚+15%で「気持ちよさ」を明示 */
         const mortarF = 0.12 + 0.25 * (trowelMortar/TMAX);
@@ -181,6 +183,7 @@
       <canvas id="rh0" width="128" height="128"></canvas>
       <canvas id="opsCvs" width="512" height="512"></canvas>
       <canvas id="hudCvs" width="384" height="560"></canvas>
+      <canvas id="histCvs" width="512" height="600"></canvas>
     </a-assets>
     <!-- メイン壁: base roughness=1.0, metalness=0.05（湿り感のために metalness を少し盛る） -->
     <a-entity id="wallMain"
@@ -195,11 +198,24 @@
     <!-- HUD (道場・巻物風) -->
     <a-plane id="hudPanel" width="0.46" height="0.68" position="-1.0 1.84 -0.55" rotation="0 35 0"
              material="shader:flat;color:#fff;"></a-plane>
+    <!-- 記録ボタン（藍色） -->
+    <a-entity position="-1.0 1.42 -0.55" rotation="0 35 0">
+      <a-box id="recBtn" width="0.38" height="0.11" depth="0.04" color="#2a4a6a"></a-box>
+      <a-text value="記録する" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
+    </a-entity>
+    <!-- 履歴を見るボタン（濃緑） -->
+    <a-entity position="-1.0 1.29 -0.55" rotation="0 35 0">
+      <a-box id="histBtn" width="0.38" height="0.11" depth="0.04" color="#2a5a3a"></a-box>
+      <a-text value="履歴を見る" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
+    </a-entity>
     <!-- リセットボタン -->
-    <a-entity position="-1.0 1.36 -0.55" rotation="0 35 0">
-      <a-box id="resetBtn" width="0.38" height="0.12" depth="0.04" color="#a44"></a-box>
+    <a-entity position="-1.0 1.16 -0.55" rotation="0 35 0">
+      <a-box id="resetBtn" width="0.38" height="0.11" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
     </a-entity>
+    <!-- 履歴パネル（通常は非表示） -->
+    <a-plane id="histPanel" width="0.62" height="0.73" position="0 1.35 -0.30" rotation="0 0 0"
+             visible="false" material="shader:flat;color:#fff;transparent:true;"></a-plane>
     <!-- 操作説明 -->
     <a-plane width="0.68" height="0.55" position="0.95 1.65 -0.60" rotation="0 -30 0"
              material="src:#opsCvs;transparent:true;shader:flat;"></a-plane>
@@ -217,7 +233,7 @@
     </a-entity>
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
-              raycaster="objects:#resetBtn;far:3;lineColor:#fff;lineOpacity:0.4">
+              raycaster="objects:#resetBtn,#recBtn,#histBtn;far:3;lineColor:#fff;lineOpacity:0.4">
       <a-box position="0 0.005 -0.05" width="0.30" height="0.007" depth="0.30" color="#A08860" material="roughness:0.85;"></a-box>
       <a-cylinder position="0 -0.065 -0.05" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
       <a-sphere id="hMV" position="0 0.022 -0.05" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
@@ -251,6 +267,62 @@
   let hawkMortar=100,trowelMortar=0,lastUV=null;
   const TMAX=60,PCOST=0.35;
   let hudMsg='',msgT=null,bestScore=0;
+  /* ===== 練習履歴の記録用トラッキング ===== */
+  const HIST_KEY='sakan_mr_history_v1';
+  let sessionStart=Date.now();   /* 現在の練習の開始時刻（記録 or 壁設置でリセット）*/
+  let kaeshiCount=0;             /* コテ返し回数 */
+  let angleGoodTicks=0,angleTotalTicks=0;  /* 角度が適正だった tick 数 / 塗った総 tick 数 */
+  let todayStats={count:0,avg:0,best:0};   /* 本日サマリー（記録時に再計算）*/
+  function loadHistory(){
+    try{const raw=localStorage.getItem(HIST_KEY);return raw?JSON.parse(raw):[];}
+    catch(e){return [];}
+  }
+  function saveHistory(arr){
+    try{localStorage.setItem(HIST_KEY,JSON.stringify(arr));return true;}
+    catch(e){return false;}
+  }
+  function todayKey(d){const t=new Date(d);return `${t.getFullYear()}-${t.getMonth()+1}-${t.getDate()}`;}
+  function recalcToday(){
+    const hist=loadHistory();
+    const tk=todayKey(Date.now());
+    const todays=hist.filter(h=>todayKey(h.t)===tk);
+    if(todays.length===0){todayStats={count:0,avg:0,best:0};return;}
+    const sum=todays.reduce((a,h)=>a+h.score,0);
+    todayStats={
+      count:todays.length,
+      avg:Math.round(sum/todays.length),
+      best:Math.max(...todays.map(h=>h.score))
+    };
+  }
+  function recordSession(){
+    const sc=computeScore(painters[0]);
+    if(sc.covered===0){setMsg('まだ塗っておらぬ');return;}
+    const score=Math.floor(sc.overall*100);
+    const rec={
+      t:Date.now(),
+      score:score,
+      rank:getRank(score).name,
+      uni:Math.round(sc.uniformity*100),
+      thk:Math.round(sc.thickness*100),
+      cov:Math.round(sc.coverage*100),
+      sec:Math.round((Date.now()-sessionStart)/1000),
+      kae:kaeshiCount,
+      ang:angleTotalTicks>0?Math.round(angleGoodTicks/angleTotalTicks*100):0
+    };
+    const hist=loadHistory();
+    hist.push(rec);
+    if(hist.length>200)hist.splice(0,hist.length-200);  /* 上限 200 件 */
+    const ok=saveHistory(hist);
+    if(ok){
+      recalcToday();
+      setMsg(`記録 ${score}点`);
+      /* 次の練習に向けてカウンタをリセット */
+      sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
+    }else{
+      setMsg('記録できませんでした');
+    }
+    requestHUD();
+  }
   function setMsg(m){hudMsg=m;requestHUD();clearTimeout(msgT);msgT=setTimeout(()=>{hudMsg='';requestHUD();},4000);}
   function updMortar(){
     const hv=document.getElementById('hMV');
@@ -415,7 +487,7 @@
     requestHUD();
   }
   const painters=WIDS.map((_,i)=>createPainter(CIDS[i],HIDS[i],RIDS[i]));
-  let hudTex=null,washiBg=null;
+  let hudTex=null,washiBg=null,histTex=null;
   sc.addEventListener('loaded',()=>{
     painters.forEach((p,i)=>{
       drawBase(p);
@@ -442,6 +514,15 @@
     hudTex.minFilter=THREE.LinearFilter;hudTex.magFilter=THREE.LinearFilter;
     const hudMesh=document.getElementById('hudPanel').getObject3D('mesh');
     if(hudMesh){hudMesh.material.map=hudTex;hudMesh.material.needsUpdate=true;}
+    /* 履歴パネルのテクスチャ */
+    const histCvs=document.getElementById('histCvs');
+    if(histCvs){
+      histTex=new THREE.CanvasTexture(histCvs);
+      histTex.minFilter=THREE.LinearFilter;histTex.magFilter=THREE.LinearFilter;
+      const hm=document.getElementById('histPanel')?.getObject3D('mesh');
+      if(hm){hm.material.map=histTex;hm.material.needsUpdate=true;}
+    }
+    recalcToday();
     prepareWashi();drawOps();drawHUD();
     /* HUD 保険 + ① 濡れの経時的な乾き */
     setInterval(()=>{
@@ -600,7 +681,120 @@
   /* リセット */
   document.getElementById('resetBtn').addEventListener('click',()=>{
     painters.forEach(p=>resetPainter(p));setMsg('白紙に戻す');
+    sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
   });
+  /* 記録する */
+  document.getElementById('recBtn').addEventListener('click',()=>{
+    recordSession();haptic(0.4,80);
+  });
+  /* 履歴を見る（トグル） */
+  let histVisible=false;
+  document.getElementById('histBtn').addEventListener('click',()=>{
+    histVisible=!histVisible;
+    const panel=document.getElementById('histPanel');
+    if(!panel)return;
+    panel.setAttribute('visible',histVisible);
+    if(histVisible){drawHistory();haptic(0.3,60);}
+  });
+  /* ===== 履歴パネルの描画 ===== */
+  function drawHistory(){
+    const cvs=document.getElementById('histCvs');if(!cvs)return;
+    const ctx=cvs.getContext('2d');
+    const W=cvs.width,H=cvs.height;
+    /* 和紙背景（HUD と同じ雰囲気で少し明るめ）*/
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#F2E8CE');g.addColorStop(0.5,'#EBE0BE');g.addColorStop(1,'#E2D2A8');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    for(let i=0;i<400;i++){
+      const x=Math.random()*W,y=Math.random()*H,l=Math.random()*12+3,a=Math.random()*Math.PI*2;
+      ctx.strokeStyle=`rgba(${130+Math.random()*40|0},${90+Math.random()*30|0},${50+Math.random()*30|0},${0.04+Math.random()*0.08})`;
+      ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*l,y+Math.sin(a)*l);ctx.stroke();
+    }
+    /* 巻物の軸 */
+    ctx.fillStyle='#3a2308';ctx.fillRect(0,0,W,16);ctx.fillRect(0,H-16,W,16);
+    ctx.fillStyle='rgba(255,200,120,0.25)';ctx.fillRect(0,4,W,3);ctx.fillRect(0,H-7,W,3);
+    ctx.strokeStyle='rgba(110,70,30,0.5)';ctx.lineWidth=1.5;ctx.strokeRect(18,26,W-36,H-52);
+    /* タイトル */
+    ctx.fillStyle='#2a1505';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+    ctx.font='bold 30px "Yu Mincho","Hiragino Mincho ProN","MS Mincho",serif';
+    ctx.fillText('稽 古 帳',W/2,62);
+    ctx.strokeStyle='rgba(110,70,30,0.6)';ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(W*0.25,76);ctx.lineTo(W*0.75,76);ctx.stroke();
+    const hist=loadHistory();
+    if(hist.length===0){
+      ctx.fillStyle='#5a2f10';ctx.font='22px "Yu Mincho","Hiragino Mincho ProN",serif';
+      ctx.fillText('まだ記録がありませぬ',W/2,H/2);
+      if(histTex)histTex.needsUpdate=true;
+      return;
+    }
+    const recent=hist.slice(-10);
+    /* --- 折れ線グラフ --- */
+    const gx=60,gy=110,gw=W-120,gh=190;
+    ctx.strokeStyle='rgba(110,70,30,0.35)';ctx.lineWidth=1;
+    [0,25,50,75,100].forEach(v=>{
+      const y=gy+gh-(v/100)*gh;
+      ctx.beginPath();ctx.moveTo(gx,y);ctx.lineTo(gx+gw,y);ctx.stroke();
+      ctx.fillStyle='#7a5a30';ctx.font='12px sans-serif';ctx.textAlign='right';
+      ctx.fillText(String(v),gx-6,y+4);
+    });
+    if(recent.length>1){
+      ctx.strokeStyle='#7a4015';ctx.lineWidth=2.5;ctx.beginPath();
+      recent.forEach((h,i)=>{
+        const x=gx+(i/(recent.length-1))*gw;
+        const y=gy+gh-(Math.max(0,Math.min(100,h.score))/100)*gh;
+        i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+    }
+    recent.forEach((h,i)=>{
+      const x=recent.length>1?gx+(i/(recent.length-1))*gw:gx+gw/2;
+      const y=gy+gh-(Math.max(0,Math.min(100,h.score))/100)*gh;
+      ctx.fillStyle='#5a2a08';ctx.beginPath();ctx.arc(x,y,4.5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#2a1505';ctx.font='bold 13px sans-serif';ctx.textAlign='center';
+      ctx.fillText(String(h.score),x,y-10);
+    });
+    ctx.fillStyle='#5a2f10';ctx.font='15px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.textAlign='center';
+    ctx.fillText(`直近 ${recent.length} 回の推移`,W/2,gy+gh+26);
+    /* --- 直近の詳細 --- */
+    const last=hist[hist.length-1];
+    const dy=gy+gh+58;
+    ctx.strokeStyle='rgba(110,70,30,0.4)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(W*0.12,dy-20);ctx.lineTo(W*0.88,dy-20);ctx.stroke();
+    ctx.fillStyle='#2a1505';ctx.font='bold 19px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.textAlign='left';
+    const d=new Date(last.t);
+    ctx.fillText(`前回 ${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,W*0.12,dy+4);
+    ctx.textAlign='right';ctx.font='bold 22px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText(`${last.rank}  ${last.score}点`,W*0.88,dy+4);
+    ctx.font='15px "Yu Mincho","Hiragino Mincho ProN",serif';ctx.fillStyle='#4a2508';
+    ctx.textAlign='left';
+    ctx.fillText(`平滑 ${last.uni} / 均一 ${last.thk} / 被覆 ${last.cov}`,W*0.12,dy+30);
+    ctx.textAlign='right';
+    ctx.fillText(`${last.sec}秒  返し${last.kae}回  角度${last.ang}%`,W*0.88,dy+30);
+    /* --- 弱点指摘（直近5回の平均から）--- */
+    const last5=hist.slice(-5);
+    const avgUni=last5.reduce((a,h)=>a+h.uni,0)/last5.length;
+    const avgThk=last5.reduce((a,h)=>a+h.thk,0)/last5.length;
+    const avgCov=last5.reduce((a,h)=>a+h.cov,0)/last5.length;
+    const avgAng=last5.reduce((a,h)=>a+h.ang,0)/last5.length;
+    let advice;
+    const lowest=Math.min(avgUni,avgThk,avgCov);
+    if(avgAng<50)          advice='鏝を寝かせよ — 角度が定まらぬ';
+    else if(lowest===avgCov&&avgCov<70) advice='端まで届かせよ — 塗り残しあり';
+    else if(lowest===avgUni&&avgUni<70) advice='均しが足りぬ — 波を消せ';
+    else if(lowest===avgThk&&avgThk<70) advice='厚みを揃えよ — 塗代を意識せよ';
+    else if(lowest>=80)    advice='見事な出来 — この調子で精進せよ';
+    else                   advice='悪くはない — 更に丁寧に';
+    ctx.textAlign='center';ctx.fillStyle='#a02808';
+    ctx.font='bold 20px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText('〘 '+advice+' 〙',W/2,dy+70);
+    /* --- 通算 --- */
+    ctx.fillStyle='#5a2f10';ctx.font='15px "Yu Mincho","Hiragino Mincho ProN",serif';
+    const allBest=Math.max(...hist.map(h=>h.score));
+    ctx.fillText(`通算 ${hist.length} 回   最高 ${allBest} 点`,W/2,dy+100);
+    if(histTex)histTex.needsUpdate=true;
+  }
   /* 操作説明 */
   function drawOps(){
     const c=document.getElementById('opsCvs'),c2=c.getContext('2d'),CW=c.width,CH=c.height;
@@ -613,7 +807,7 @@
       {l:'鏝板+ひねり',d:'コテ返し',c:'#88FF88'},
       {l:'壁+材料あり',d:'塗る',c:'#88FF88'},
       {l:'壁+材料なし',d:'均す(自動)',c:'#FFB060'},
-      {l:'左レーザー',d:'リセット',c:'#ddd'},
+      {l:'左レーザー',d:'記録/履歴/リセット',c:'#ddd'},
     ];
     c2.textAlign='left';
     its.forEach((it,i)=>{
@@ -736,11 +930,15 @@
     drawDetail(ctx,'平 滑 度',sc.uniformity,W,316);
     drawDetail(ctx,'均 一 性',sc.thickness, W,354);
     drawDetail(ctx,'被 覆 率',sc.coverage,  W,392);
-    /* 本日の最高 */
+    /* 本日サマリー（記録した回数ベース）*/
     ctx.fillStyle='#5a2f10';
-    ctx.font='bold 18px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.font='bold 16px "Yu Mincho","Hiragino Mincho ProN",serif';
     ctx.textAlign='center';
-    ctx.fillText(`本日の最高  ${bestScore} 点`,W/2,434);
+    if(todayStats.count>0){
+      ctx.fillText(`本日 ${todayStats.count}回 / 平均 ${todayStats.avg}点 / 最高 ${todayStats.best}点`,W/2,434);
+    }else{
+      ctx.fillText(`本日の記録  なし`,W/2,434);
+    }
     /* 残量（数値を右寄せに揃える）*/
     ctx.strokeStyle='rgba(110,70,30,0.4)';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(W*0.15,452);ctx.lineTo(W*0.85,452);ctx.stroke();
