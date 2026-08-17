@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v6.0.1 道場・Quest専用）</title>
+  <title>左官MR練習 - 平壁（v6.0.2 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -21,7 +21,7 @@
   /* 鏝板の板本体: 四隅を面取りした八角形（実物写真に準拠） */
   AFRAME.registerComponent('hawk-board',{
     init:function(){
-      const S=0.150,CH=0.048,TH=0.008;   /* 半辺150mm(=300mm角), 面取り48mm, 厚み8mm */
+      const S=0.200,CH=0.064,TH=0.008;   /* 半辺200mm(=400mm角), 面取り64mm, 厚み8mm */
       const sh=new THREE.Shape();
       sh.moveTo(-S+CH,-S);sh.lineTo(S-CH,-S);
       sh.lineTo(S,-S+CH);sh.lineTo(S,S-CH);
@@ -188,7 +188,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v6.0.1 道場</div>
+  <div id="ver">v6.0.2 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
