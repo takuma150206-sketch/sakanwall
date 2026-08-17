@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v6.0.0 道場・Quest専用）</title>
+  <title>左官MR練習 - 平壁（v6.0.1 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -16,6 +16,23 @@
       geo.translate(0,0,-D/2);
       this.el.setObject3D('mesh',new THREE.Mesh(geo,
         new THREE.MeshStandardMaterial({color:0xc4c6ca,metalness:0.90,roughness:0.14,side:THREE.DoubleSide})));
+    }
+  });
+  /* 鏝板の板本体: 四隅を面取りした八角形（実物写真に準拠） */
+  AFRAME.registerComponent('hawk-board',{
+    init:function(){
+      const S=0.150,CH=0.048,TH=0.008;   /* 半辺150mm(=300mm角), 面取り48mm, 厚み8mm */
+      const sh=new THREE.Shape();
+      sh.moveTo(-S+CH,-S);sh.lineTo(S-CH,-S);
+      sh.lineTo(S,-S+CH);sh.lineTo(S,S-CH);
+      sh.lineTo(S-CH,S);sh.lineTo(-S+CH,S);
+      sh.lineTo(-S,S-CH);sh.lineTo(-S,-S+CH);
+      sh.closePath();
+      const geo=new THREE.ExtrudeGeometry(sh,{depth:TH,bevelEnabled:false});
+      geo.rotateX(-Math.PI/2);          /* XY平面 → XZ平面（水平な板）に */
+      geo.translate(0,TH/2,0);
+      this.el.setObject3D('mesh',new THREE.Mesh(geo,
+        new THREE.MeshStandardMaterial({color:0xC9A876,roughness:0.85,metalness:0,side:THREE.DoubleSide})));
     }
   });
   AFRAME.registerComponent('trowel',{
@@ -171,7 +188,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v6.0.0 道場</div>
+  <div id="ver">v6.0.1 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -247,8 +264,13 @@
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
               raycaster="objects:#resetBtn,#recBtn,#histBtn;far:3;lineColor:#fff;lineOpacity:0.4">
-      <a-box position="0 0.005 -0.05" width="0.30" height="0.007" depth="0.30" color="#A08860" material="roughness:0.85;"></a-box>
-      <a-cylinder position="0 -0.065 -0.05" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
+      <!-- 板本体: 四隅を面取りした八角形 (300mm角, 厚み8mm) -->
+      <a-entity hawk-board position="0 0.005 -0.05"></a-entity>
+      <!-- 裏の枠: 脚2枚 + 握り棒。板から 50mm 下に握り棒を渡す -->
+      <a-box position="-0.105 -0.020 -0.05" width="0.014" height="0.042" depth="0.150" color="#D8BC84" material="roughness:0.80;"></a-box>
+      <a-box position=" 0.105 -0.020 -0.05" width="0.014" height="0.042" depth="0.150" color="#D8BC84" material="roughness:0.80;"></a-box>
+      <!-- 握り棒 (角材 240×30×30mm) -->
+      <a-box position="0 -0.050 -0.05" width="0.240" height="0.030" depth="0.032" color="#D8BC84" material="roughness:0.75;"></a-box>
       <a-sphere id="hMV" position="0 0.022 -0.05" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
     </a-entity>
     <a-light type="ambient" intensity="0.60"></a-light>
