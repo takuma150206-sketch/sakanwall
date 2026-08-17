@@ -37,6 +37,7 @@
       this.el.addEventListener('abuttondown',()=>{
         const o=this.el.object3D;if(!o)return;
         o.getWorldPosition(this._tp);
+        if(diagActive)hideDiag();
         placeWalls(this._tp.x, this._tp.z);
         painters.forEach(p=>resetPainter(p));
         sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
@@ -109,6 +110,7 @@
         return;
       }
       else mode='paint';
+      if(diagActive)hideDiag();   /* 診断表示中に塗り始めたら通常表示に戻す */
       if(!this.wasContact){haptic(0.65,55);snd.start(this.spd,mode);this.wasContact=true;}
       else snd.upd(this.spd,mode);
       const p=painters[hitIdx];
@@ -166,6 +168,7 @@
     塗代ガイド 5mm／最大塗り厚 10mm<br>
     得点基準: 5mm = 100点<br>
     ①艶 ②触覚 ③音 ④角度 ⑤盛り<br>
+    記録時に厚み診断（緑=4〜6mm適正 / 黄=薄 / 赤=厚）<br>
     <br>
     Ⓐ 壁を手元に設置<br>
     左グリップ: 鏝板を補充<br>
@@ -181,6 +184,7 @@
       <canvas id="c0" width="512" height="512"></canvas>
       <canvas id="h0" width="128" height="128"></canvas>
       <canvas id="rh0" width="128" height="128"></canvas>
+      <canvas id="dg0" width="128" height="128"></canvas>
       <canvas id="opsCvs" width="512" height="512"></canvas>
       <canvas id="hudCvs" width="384" height="560"></canvas>
       <canvas id="histCvs" width="512" height="600"></canvas>
@@ -315,7 +319,8 @@
     const ok=saveHistory(hist);
     if(ok){
       recalcToday();
-      setMsg(`記録 ${score}点`);
+      setMsg(`記録 ${score}点 — 厚みを確認せよ`);
+      showDiag(3000);   /* 答え合わせ: 厚み診断を3秒表示 */
       /* 次の練習に向けてカウンタをリセット */
       sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
     }else{
@@ -454,15 +459,19 @@
   const CIDS=['c0'];
   const HIDS=['h0'];
   const RIDS=['rh0'];   /* ① roughness canvas */
-  function createPainter(cid,hid,rid){
+  const DIDS=['dg0'];   /* 厚み診断（答え合わせ）canvas */
+  function createPainter(cid,hid,rid,did){
     const cvs=document.getElementById(cid),hcvs=document.getElementById(hid),rcvs=document.getElementById(rid);
+    const dcvs=document.getElementById(did);
     const ctx=cvs.getContext('2d'),hc=hcvs.getContext('2d'),rhc=rcvs.getContext('2d');
+    const dgc=dcvs.getContext('2d');
     const W=cvs.width,H=cvs.height,HW=hcvs.width,HH=hcvs.height;
-    return{W,H,HW,HH,ctx,hc,rhc,colorTex:null,heightTex:null,roughnessTex:null,
+    return{W,H,HW,HH,ctx,hc,rhc,dgc,colorTex:null,heightTex:null,roughnessTex:null,diagTex:null,
       heightData:new Float32Array(HW*HH),
       wetnessData:new Float32Array(HW*HH),   /* ① 0(乾)〜1(濡) */
       htImg:hc.createImageData(HW,HH),
       rhImg:rhc.createImageData(HW,HH),
+      dgImg:dgc.createImageData(HW,HH),
       thickMap:new Uint8Array(W*H),lastUV:null};
   }
   function drawBase(p){
@@ -486,7 +495,7 @@
     if(p.heightTex)p.heightTex.needsUpdate=true;
     requestHUD();
   }
-  const painters=WIDS.map((_,i)=>createPainter(CIDS[i],HIDS[i],RIDS[i]));
+  const painters=WIDS.map((_,i)=>createPainter(CIDS[i],HIDS[i],RIDS[i],DIDS[i]));
   let hudTex=null,washiBg=null,histTex=null;
   sc.addEventListener('loaded',()=>{
     painters.forEach((p,i)=>{
@@ -501,6 +510,9 @@
       mesh.material.displacementScale=0.010;
       mesh.material.displacementBias=0;
       /* ① roughnessMap＋metalnessMap を同一テクスチャで割り当て — 塗った直後だけ濡れた質感（強化） */
+      /* 厚み診断用テクスチャ（普段は未使用、showDiag() 時のみ map に差し替え）*/
+      p.diagTex=new THREE.CanvasTexture(document.getElementById(DIDS[i]));
+      p.diagTex.minFilter=THREE.LinearFilter;p.diagTex.magFilter=THREE.LinearFilter;
       p.roughnessTex=new THREE.CanvasTexture(document.getElementById(RIDS[i]));
       mesh.material.roughnessMap=p.roughnessTex;
       mesh.material.metalnessMap=p.roughnessTex;
@@ -543,6 +555,55 @@
     },500);
   });
   function markDirty(p){if(p.colorTex)p.colorTex.needsUpdate=true;}
+  /* ===== 厚み診断（答え合わせ）=====
+     未塗装=白 / 4mm未満=黄(薄い) / 4〜6mm=緑(適正) / 6mm超=赤(厚い)
+     薄い側・厚い側は外れ具合で濃淡をつける */
+  let diagTimer=null,diagActive=false;
+  function renderDiag(p){
+    const d=p.dgImg.data;
+    for(let i=0;i<p.heightData.length;i++){
+      const h=p.heightData[i];
+      let r,g,b;
+      if(h<=0.5){                     /* 未塗装: 白 */
+        r=236;g=236;b=232;
+      }else if(h<4.0){                /* 薄い: 黄。0.5mm→淡黄, 4mm→濃黄 */
+        const t=Math.max(0,Math.min(1,(h-0.5)/3.5));
+        r=250;g=Math.round(228-t*40);b=Math.round(130-t*90);
+      }else if(h<=6.0){               /* 適正: 緑。中心5mmが最も鮮やか */
+        const t=1-Math.abs(h-5.0)/1.0;
+        r=Math.round(70-t*30);g=Math.round(180+t*40);b=Math.round(90-t*20);
+      }else{                          /* 厚い: 赤。6mm→橙赤, 10mm以上→濃赤 */
+        const t=Math.max(0,Math.min(1,(h-6.0)/4.0));
+        r=Math.round(228-t*50);g=Math.round(90-t*70);b=Math.round(60-t*40);
+      }
+      d[i*4]=r;d[i*4+1]=g;d[i*4+2]=b;d[i*4+3]=255;
+    }
+    p.dgc.putImageData(p.dgImg,0,0);
+    if(p.diagTex)p.diagTex.needsUpdate=true;
+  }
+  function showDiag(ms){
+    ms=ms||3000;
+    clearTimeout(diagTimer);
+    painters.forEach((p,i)=>{
+      renderDiag(p);
+      const wEl=document.getElementById(WIDS[i]);if(!wEl)return;
+      const mesh=wEl.getObject3D('mesh');if(!mesh)return;
+      mesh.material.map=p.diagTex;
+      mesh.material.needsUpdate=true;
+    });
+    diagActive=true;
+    diagTimer=setTimeout(hideDiag,ms);
+  }
+  function hideDiag(){
+    clearTimeout(diagTimer);
+    painters.forEach((p,i)=>{
+      const wEl=document.getElementById(WIDS[i]);if(!wEl)return;
+      const mesh=wEl.getObject3D('mesh');if(!mesh)return;
+      mesh.material.map=p.colorTex;
+      mesh.material.needsUpdate=true;
+    });
+    diagActive=false;
+  }
   function renderHt(p){
     const d=p.htImg.data;
     for(let i=0;i<p.heightData.length;i++){
@@ -680,6 +741,7 @@
   }
   /* リセット */
   document.getElementById('resetBtn').addEventListener('click',()=>{
+    if(diagActive)hideDiag();
     painters.forEach(p=>resetPainter(p));setMsg('白紙に戻す');
     sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
   });
