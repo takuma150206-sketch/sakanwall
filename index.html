@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v5.7 道場・コテ向き修正）</title>
+  <title>左官MR練習 - 平壁（v5.5 道場）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -26,8 +26,9 @@
       this._wasHadMortar=false;   /* ② mortar-just-ran-out haptic 用 */
       this.rc=new THREE.Raycaster();this.rc.far=0.08;
       /* wrapper -90 X 回転により、wrapper 内の (0, y, -0.042) は rightHand local で (0, -0.042, -y) に。
-         Blade rectangular 部分は wrapper local で y=[-0.085, 0.115] → rightHand local で z=[0.085, -0.115]。*/
-      const BY=-0.042,Z0=0.085,Z1=-0.115;
+         Blade rectangular 部分は wrapper local で y=[-0.085, 0.115] → rightHand local で z=[0.085, -0.115]。
+         さらに wrapper position="0 0 0.05" で全体を +0.05 手前に寄せているので、bpts の Z も +0.05 分シフト。*/
+      const BY=-0.042,Z0=0.135,Z1=-0.065;
       this.bpts=[];
       for(let i=0;i<9;i++) this.bpts.push(new THREE.Vector3(0,BY,Z0+i/8*(Z1-Z0)));
       this._wp=new THREE.Vector3();this._fwd=new THREE.Vector3();
@@ -92,8 +93,8 @@
       /* コテ返し。wrapper 回転後の blade 中心 (0, 0.015, -0.042) は rightHand で (0, -0.042, -0.015) */
       const lh=document.getElementById('leftHand');
       if(lh?.object3D){
-        this._hp.set(0,0.012,-0.15).applyMatrix4(lh.object3D.matrixWorld);
-        this._bc.set(0,-0.042,-0.015).applyMatrix4(o.matrixWorld);
+        this._hp.set(0,0.012,-0.05).applyMatrix4(lh.object3D.matrixWorld);
+        this._bc.set(0,-0.042,0.035).applyMatrix4(o.matrixWorld);
         if(this._bc.distanceTo(this._hp)<0.22){
           if(!this.heq){this.heq=o.quaternion.clone();this.hma=0;if(hawkMortar>0)setMsg('手首をひねれ');}
           this.hma=Math.max(this.hma,o.quaternion.angleTo(this.heq));
@@ -207,7 +208,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v5.7 道場 (コテ向き修正)</div>
+  <div id="ver">v5.5 道場 (PC対応+コテ向き修正)</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -254,7 +255,7 @@
              material="src:#opsCvs;transparent:true;shader:flat;"></a-plane>
     <!-- 右手: コントローラーとコテの向き差 90° を wrapper の -90 X 回転で吸収 -->
     <a-entity id="rightHand" oculus-touch-controls="hand:right;model:false" trowel>
-      <a-entity id="trowelWrap" rotation="-90 0 0">
+      <a-entity id="trowelWrap" rotation="-90 0 0" position="0 0 0.05">
         <a-sphere position="0 -0.080 0" radius="0.018" color="#C4A068" material="roughness:0.75;"></a-sphere>
         <a-cylinder position="0 -0.0175 0" radius="0.015" height="0.125" color="#D8BC84" material="roughness:0.70;"></a-cylinder>
         <a-cylinder position="0 0.045 0" radius="0.013" height="0.008" color="#7A7A7A" material="metalness:0.7;roughness:0.4;"></a-cylinder>
@@ -267,9 +268,9 @@
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
               raycaster="objects:#resetBtn;far:3;lineColor:#fff;lineOpacity:0.4">
-      <a-box position="0 0.005 -0.15" width="0.30" height="0.007" depth="0.30" color="#A08860" material="roughness:0.85;"></a-box>
-      <a-cylinder position="0 -0.065 -0.15" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
-      <a-sphere id="hMV" position="0 0.022 -0.15" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
+      <a-box position="0 0.005 -0.05" width="0.30" height="0.007" depth="0.30" color="#A08860" material="roughness:0.85;"></a-box>
+      <a-cylinder position="0 -0.065 -0.05" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
+      <a-sphere id="hMV" position="0 0.022 -0.05" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
     </a-entity>
     <!-- PC 用カメラ: rig で WASD 移動、camera で look-controls。XR中は自動無効 -->
     <a-entity id="rig" position="0 0 0.5" wasd-controls="acceleration:20;fly:false">
