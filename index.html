@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v5.5 道場）</title>
+  <title>左官MR練習 - 平壁（v5.5 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -20,7 +20,7 @@
   });
   AFRAME.registerComponent('trowel',{
     init:function(){
-      this.lastTick=0;this.wasContact=false;this.mouseDown=false;
+      this.lastTick=0;this.wasContact=false;
       this.heq=null;this.hma=0;this.kgd=false;
       this._lp=new THREE.Vector3();this.spd=0;
       this._wasHadMortar=false;   /* ② mortar-just-ran-out haptic 用 */
@@ -43,39 +43,6 @@
       });
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
         hawkMortar=100;updMortar();setMsg('鏝板補充');
-      });
-      window.addEventListener('mousedown',(e)=>{if(e.button===0)this.mouseDown=true;});
-      window.addEventListener('mouseup',  (e)=>{if(e.button===0)this.mouseDown=false;});
-      /* PC 用キーボード: Space=コテ返し, R=鏝板補充, Q=壁設置, T=リセット。XR中は無効 */
-      window.addEventListener('keydown',(e)=>{
-        const sc=document.querySelector('a-scene');
-        if(sc&&(sc.is('vr-mode')||sc.is('ar-mode')))return;
-        if(e.code==='Space'){
-          e.preventDefault();
-          if(hawkMortar>0){
-            const amt=Math.min(50,hawkMortar);
-            hawkMortar=Math.max(0,hawkMortar-amt);
-            trowelMortar=Math.min(78,trowelMortar+amt);
-            this.kgd=true;
-            updMortar();setMsg('コテ返し');snd.playKG();
-          }
-        }else if(e.code==='KeyR'){
-          hawkMortar=100;updMortar();setMsg('鏝板補充');
-        }else if(e.code==='KeyQ'){
-          /* 壁設置: 現在のカメラワールド XZ 位置基準 */
-          const camEl=document.getElementById('cam');
-          if(camEl){
-            const wp=new THREE.Vector3();
-            camEl.object3D.getWorldPosition(wp);
-            placeWalls(wp.x,wp.z);
-          }else{
-            placeWalls(0,0);
-          }
-          painters.forEach(p=>resetPainter(p));
-          setMsg('壁を設置');
-        }else if(e.code==='KeyT'){
-          painters.forEach(p=>resetPainter(p));setMsg('白紙に戻す');
-        }
       });
     },
     tick:function(){
@@ -107,25 +74,7 @@
           }
         }else{this.heq=null;this.hma=0;}
       }
-      /* PC モード: コテをカメラ位置の右下前方に追従、視線方向 + 15° 下tiltで角度が塗り適正になるように
-         wrapper -90 X 回転で blade forward が rightHand の -Y に変わったので、
-         +90° 分足して合計 +105° (π/2 + 0.26 rad) の rotateX で blade forward がカメラ -Z + 15° 下向きに */
-      if(!isXR){
-        const camEl=document.getElementById('cam');
-        if(camEl){
-          const camObj=camEl.object3D;
-          const camWorldPos=new THREE.Vector3();camObj.getWorldPosition(camWorldPos);
-          const camWorldQuat=new THREE.Quaternion();camObj.getWorldQuaternion(camWorldQuat);
-          /* 右下前方オフセット: 右0.18, 下0.20, 前0.35 */
-          const offset=new THREE.Vector3(0.18,-0.20,-0.35);
-          offset.applyQuaternion(camWorldQuat);
-          o.position.copy(camWorldPos).add(offset);
-          o.quaternion.copy(camWorldQuat);
-          o.rotateX(Math.PI/2 + 0.26);
-          o.updateMatrixWorld(true);
-        }
-      }
-      if(!isXR&&!this.mouseDown){lastUV=null;this.wasContact=false;return;}
+      if(!isXR){lastUV=null;this.wasContact=false;return;}
       /* wrapper -90 X 回転後、blade forward (wrapper local -Z) は rightHand local で (0,-1,0) */
       this._fwd.set(0,-1,0).transformDirection(o.matrixWorld);
       const WIDS=['wallMain'];
@@ -209,17 +158,17 @@
   </style>
 </head>
 <body>
-  <div id="ver">v5.5 道場 (PC対応+コテ向き修正)</div>
+  <div id="ver">v5.5 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
     得点基準: 5mm = 100点<br>
     ①艶 ②触覚 ③音 ④角度 ⑤盛り<br>
     <br>
-    <strong>PC操作:</strong><br>
-    WASD: 移動 / マウス左Drag: 見る＆塗る<br>
-    Space: コテ返し / R: 鏝板補充<br>
-    Q: 壁を設置 / T: リセット
+    Ⓐ 壁を手元に設置<br>
+    左グリップ: 鏝板を補充<br>
+    鏝板+ひねり → コテ返し<br>
+    材料あり → 塗る / なし → 均す
   </div>
   <button id="btn" disabled>確認中...</button>
   <div id="st">確認中...</div>
@@ -272,10 +221,6 @@
       <a-box position="0 0.005 -0.05" width="0.30" height="0.007" depth="0.30" color="#A08860" material="roughness:0.85;"></a-box>
       <a-cylinder position="0 -0.065 -0.05" radius="0.016" height="0.12" color="#6B4226" material="roughness:0.80;"></a-cylinder>
       <a-sphere id="hMV" position="0 0.022 -0.05" scale="0.22 0.05 0.22" color="#828278" material="roughness:0.9;"></a-sphere>
-    </a-entity>
-    <!-- PC 用カメラ: rig で WASD 移動、camera で look-controls。XR中は自動無効 -->
-    <a-entity id="rig" position="0 0 0.5" wasd-controls="acceleration:20;fly:false">
-      <a-entity id="cam" camera position="0 1.6 0" look-controls="pointerLockEnabled:false;reverseMouseDrag:false"></a-entity>
     </a-entity>
     <a-light type="ambient" intensity="0.60"></a-light>
     <a-light type="directional" intensity="1.20" position="1 2 1"></a-light>
