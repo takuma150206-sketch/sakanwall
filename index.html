@@ -43,6 +43,15 @@
         sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
         setMsg('壁を設置');
       });
+      /* Ⓑ: 鏝のモルタルを全量、鏝板に戻す */
+      this.el.addEventListener('bbuttondown',()=>{
+        if(trowelMortar<=0){setMsg('戻す材料がない');return;}
+        const back=trowelMortar;
+        hawkMortar=Math.min(100,hawkMortar+back);   /* 100 上限で切り捨て */
+        trowelMortar=0;
+        this.kgd=false;this.heq=null;this.hma=0;
+        updMortar();setMsg('鏝板に戻した');haptic(0.45,120);snd.playKG();
+      });
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
         hawkMortar=100;updMortar();setMsg('鏝板補充');
       });
@@ -865,6 +874,7 @@
     c2.strokeStyle='rgba(255,255,255,0.2)';c2.lineWidth=2;c2.beginPath();c2.moveTo(40,82);c2.lineTo(CW-40,82);c2.stroke();
     const its=[
       {l:'Ⓐ',d:'壁を手元に設置',c:'#80EFFF'},
+      {l:'Ⓑ',d:'鏝板に戻す',c:'#C0A0FF'},
       {l:'左グリップ',d:'鏝板を補充',c:'#FFD080'},
       {l:'鏝板+ひねり',d:'コテ返し',c:'#88FF88'},
       {l:'壁+材料あり',d:'塗る',c:'#88FF88'},
@@ -873,10 +883,10 @@
     ];
     c2.textAlign='left';
     its.forEach((it,i)=>{
-      const y=136+i*58;
-      c2.font='bold 30px sans-serif';c2.fillStyle=it.c;c2.fillText(it.l,40,y);
+      const y=130+i*52;
+      c2.font='bold 27px sans-serif';c2.fillStyle=it.c;c2.fillText(it.l,40,y);
       c2.fillStyle='rgba(255,255,255,0.3)';c2.fillText(':',222,y);
-      c2.font='30px sans-serif';c2.fillStyle='#fff';c2.fillText(it.d,242,y);
+      c2.font='27px sans-serif';c2.fillStyle='#fff';c2.fillText(it.d,242,y);
     });
   }
   /* ===== スコア計算 ===== */
