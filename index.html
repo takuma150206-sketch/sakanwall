@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v6.0.5 道場・Quest専用）</title>
+  <title>左官MR練習 - 平壁（v6.0.6 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -75,7 +75,7 @@
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
         hawkMortar=100;updMortar();setMsg('鏝板補充');
       });
-      /* 右グリップ: 架台を掴んで移動（v6.0.5）。左グリップは補充のままなので競合しない */
+      /* 右グリップ: 架台を掴んで移動（v6.0.6）。左グリップは補充のままなので競合しない */
       this.el.addEventListener('gripdown',()=>{window._grabbing=true;this._grabInit=false;setMsg('架台を掴んだ');haptic(0.4,80);});
       this.el.addEventListener('gripup',()=>{window._grabbing=false;setMsg('架台を固定');haptic(0.3,60);});
     },
@@ -92,7 +92,7 @@
         if(s?.inputSources)for(const src of s.inputSources)
           if(src.handedness==='right'&&src.gamepad?.hapticActuators?.length){window._rgp=src.gamepad;break;}
       }catch(e){}}
-      /* ★ 架台の掴み移動（v6.0.5）: 右グリップ中は塗り/コテ返しを止めて平行移動のみ */
+      /* ★ 架台の掴み移動（v6.0.6）: 右グリップ中は塗り/コテ返しを止めて平行移動のみ */
       if(window._grabbing){
         const rig=document.getElementById('rig');
         if(rig){
@@ -214,7 +214,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v6.0.5 道場</div>
+  <div id="ver">v6.0.6 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -242,7 +242,7 @@
       <canvas id="histCvs" width="512" height="600"></canvas>
       <canvas id="stepCvs" width="512" height="384"></canvas>
     </a-assets>
-    <!-- 架台（v6.0.5）: 練習対象＋塗代ガイドをまとめて平行移動する親エンティティ。掴み移動/nudgeで動かす -->
+    <!-- 架台（v6.0.6）: 練習対象＋塗代ガイドをまとめて平行移動する親エンティティ。掴み移動/nudgeで動かす -->
     <a-entity id="rig" position="0 0 0">
     <!-- メイン壁: base roughness=1.0, metalness=0.05（湿り感のために metalness を少し盛る） -->
     <a-entity id="wallMain"
@@ -273,7 +273,7 @@
       <a-box id="resetBtn" width="0.38" height="0.11" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
     </a-entity>
-    <!-- 手順パネル＋経過タイマー（v6.0.5 追加） -->
+    <!-- 手順パネル＋経過タイマー（v6.0.6 追加） -->
     <a-entity position="0.95 1.02 -0.60" rotation="0 -30 0">
       <a-plane id="stepPanel" width="0.60" height="0.42" material="shader:flat;color:#fff;transparent:true;"></a-plane>
       <a-entity position="-0.20 -0.285 0.02">
@@ -289,7 +289,7 @@
         <a-text value="0に戻す" position="0 0 0.02" align="center" color="#fff" width="1.25"></a-text>
       </a-entity>
     </a-entity>
-    <!-- 形状セレクト（v6.0.5 追加）: レーザーで押す形状切替ボタン -->
+    <!-- 形状セレクト（v6.0.6 追加）: レーザーで押す形状切替ボタン -->
     <a-entity position="-1.0 1.00 -0.55" rotation="0 35 0">
       <a-text value="形状切替" position="-0.185 0.078 0.01" align="left" color="#eee" width="1.15"></a-text>
       <a-entity position="-0.128 0 0.01">
@@ -368,11 +368,11 @@
   let hawkMortar=100,trowelMortar=0,lastUV=null;
   const TMAX=60,PCOST=0.35;
   let hudMsg='',msgT=null,bestScore=0;
-  /* ===== 経過タイマー（v6.0.5）: 練習全体の経過時間のみを計測 ===== */
+  /* ===== 経過タイマー（v6.0.6）: 練習全体の経過時間のみを計測 ===== */
   let timerRunning=false,timerAccum=0,timerStart=0;
   function timerElapsedMs(){return timerAccum+(timerRunning?(performance.now()-timerStart):0);}
   function fmtTime(ms){const s=Math.floor(ms/1000),m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
-  /* ===== 手順（v6.0.5）: 差し替えやすいよう配列で一元定義 ===== */
+  /* ===== 手順（v6.0.6）: 差し替えやすいよう配列で一元定義 ===== */
   const STEP_LIST=[
     '①壁 左→上→右→下 の順番で縁を塗っていく',
     '②中を真っ直ぐ塗っていく',
@@ -380,17 +380,23 @@
     '④完成'
   ];
   let currentStep=0;
-  /* ===== 練習対象の形状（v6.0.5）: 主要パラメータは全てここで一元定義 ===== */
+  /* ===== 練習対象の形状（v6.0.6）: 主要パラメータは全てここで一元定義 ===== */
   const SHAPE_CFG={
     plane :{ w:1.2, h:1.0, segW:48, segH:40 },
     /* R壁: 半径R300mm・弧90°（凸/凹は shapeConvex で切替）*/
     rwall :{ radius:0.30, sweepDeg:90, h:1.0, segW:48, segH:40 },
     /* 階段: 踏み面250mm・蹴上げ180mm・幅900mm・3段 */
-    stairs:{ tread:0.25, riser:0.18, width:0.90, steps:3, seg:6, widthSeg:30 }
+    stairs:{ tread:0.25, riser:0.18, width:0.90, steps:3, seg:6, widthSeg:30,
+             /* 角(稜線)の処理: 稜線を1頂点に溶接し、両面の平均法線で変位させて割れを防ぐ。
+                arrisEps を小さくするほど角がシャープに、大きくするほど丸みが出る */
+             arrisEps:0.06,
+             /* 左右の側板(側面を塞ぐ板)。UVは主面と別領域に確保するので塗り分けできる */
+             sidePanels:true, sideSeg:6,
+             mainU:0.78, sideU:0.09, gutter:0.02 }
   };
   let activeShape='plane';
   let shapeConvex=true;   /* R壁: true=凸R / false=凹R */
-  /* ===== 架台の移動（v6.0.5）: 移動/微調整パラメータを一元定義 ===== */
+  /* ===== 架台の移動（v6.0.6）: 移動/微調整パラメータを一元定義 ===== */
   const MOVE_CFG={
     nudgeStep:0.015,        /* スティック微調整の1刻み (m) ≒1.5cm */
     nudgeThreshold:0.55,    /* スティックの倒し込み判定閾値 */
@@ -569,7 +575,7 @@
       s5.start(now);s5.stop(now+0.200);}
   };
   /* 壁・塗代ガイド配置 */
-  /* 架台の水平配置（v6.0.5）: 壁・ガイドはrigの子。rigを平行移動するだけで整合が保たれる。
+  /* 架台の水平配置（v6.0.6）: 壁・ガイドはrigの子。rigを平行移動するだけで整合が保たれる。
      Y(高さ)は掴み移動/nudgeの結果を尊重して据え置く。*/
   function placeWalls(cx,cz){
     const rig=document.getElementById('rig');if(!rig)return;
@@ -656,7 +662,7 @@
       const hm=document.getElementById('histPanel')?.getObject3D('mesh');
       if(hm){hm.material.map=histTex;hm.material.needsUpdate=true;}
     }
-    /* 手順パネルのテクスチャ（v6.0.5）*/
+    /* 手順パネルのテクスチャ（v6.0.6）*/
     const stepCvs=document.getElementById('stepCvs');
     if(stepCvs){
       stepTex=new THREE.CanvasTexture(stepCvs);
@@ -665,7 +671,7 @@
       if(sm){sm.material.map=stepTex;sm.material.needsUpdate=true;}
     }
     updateTimerBtnLabel();drawStep();
-    applyShape('plane');   /* v6.0.5: 初期形状を確定（自作ジオメトリに統一）*/
+    applyShape('plane');   /* v6.0.6: 初期形状を確定（自作ジオメトリに統一）*/
     recalcToday();
     prepareWashi();drawOps();drawHUD();
     /* HUD 保険 + ① 濡れの経時的な乾き */
@@ -1187,7 +1193,7 @@
     ctx.textAlign='right';
     ctx.fillText(`${Math.floor(val*100)}`,W*0.87,y+5);
   }
-  /* ===== 手順パネル＋経過タイマー 描画（v6.0.5）===== */
+  /* ===== 手順パネル＋経過タイマー 描画（v6.0.6）===== */
   function updateTimerBtnLabel(){const t=document.getElementById('timerBtnTxt');if(t)t.setAttribute('value',timerRunning?'一時停止':'計測開始');}
   function drawStep(){
     const cvs=document.getElementById('stepCvs');if(!cvs)return;
@@ -1242,7 +1248,7 @@
     timerAccum=0;timerStart=performance.now();setMsg('タイマーを戻した');
     haptic(0.3,60);drawStep();
   });
-  /* ===== 形状ジオメトリ生成（v6.0.5）=====
+  /* ===== 形状ジオメトリ生成（v6.0.6）=====
      いずれも UV を [0,1]^2 に収め、法線を頂点ごとに持たせる。
      → 既存のキャンバス塗り/高さマップ/変位/スコア計算はUV基準なのでそのまま流用できる。 */
   function buildPlaneGeo(){
@@ -1267,7 +1273,9 @@
     }
     for(let j=0;j<segH;j++)for(let i=0;i<segW;i++){
       const a0=j*(segW+1)+i,b0=a0+1,c0=a0+(segW+1),d0=c0+1;
-      idx.push(a0,c0,b0, b0,c0,d0);
+      /* 巻き順を法線(外向き)に合わせる。raycaster の face.normal は巻き順から算出されるため、
+         逆だと角度スコアの符号が反転して常に「立ち過ぎ」判定になる */
+      idx.push(a0,b0,c0, b0,d0,c0);
     }
     const g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
@@ -1276,41 +1284,83 @@
     g.setIndex(idx);
     return g;
   }
-  /* 階段: 側面プロファイル(蹴上げ→踏み面…)を幅方向に押し出し。
-     プロファイル長→v, 幅→u に展開して1枚のUVチャートに収める。
-     蹴上げ面の法線=+Z（正面）, 踏み面の法線=+Y（上）。面境界で頂点を分けて稜線をシャープに保つ。*/
+  /* 階段（v6.0.6 改訂）: 側面プロファイルを幅方向に押し出す点は従来通りだが、
+     ★角(稜線)の割れ対策: 蹴上げと踏み面の境界を「1つの頂点」に溶接し、
+       両面の平均法線(miter)を持たせる。従来は境界に法線が90°異なる頂点が二重に存在したため、
+       displacementMap で塗り厚を出すと両者が別方向へ押し出されて角に隙間が開いていた。
+     ★左右の側板: 階段形の板で側面を塞ぐ。UVは主面と別領域に割り当て、個別に塗れる。 */
   function buildStairsGeo(){
     const c=SHAPE_CFG.stairs;
     const W=c.width, Td=c.tread, Rh=c.riser, N=c.steps, seg=c.seg, wseg=c.widthSeg;
+    const EPS=c.arrisEps, MU=c.mainU, SU=c.sideU, GUT=c.gutter, sseg=c.sideSeg;
+    /* --- 1) プロファイルを稜線で溶接した1本のポリラインとして構築 --- */
     const segsList=[];
     let y=0,z=0;
     for(let s2=0;s2<N;s2++){
       segsList.push({p0:[z,y], p1:[z,y+Rh], n:[0,0,1]});  y+=Rh;      /* 蹴上げ(垂直) */
       segsList.push({p0:[z,y], p1:[z-Td,y], n:[0,1,0]});  z-=Td;      /* 踏み面(水平) */
     }
-    let total=0;
-    segsList.forEach(sg=>{const dz=sg.p1[0]-sg.p0[0],dy=sg.p1[1]-sg.p0[1];sg.len=Math.hypot(dz,dy);total+=sg.len;});
-    const pos=[],nor=[],uv=[],idx=[];
-    let sAccum=0;
-    segsList.forEach(sg=>{
+    const pts=[];
+    function pushPt(pz,py,ny,nz){const L=Math.hypot(ny,nz)||1;pts.push({z:pz,y:py,ny:ny/L,nz:nz/L});}
+    for(let i=0;i<segsList.length;i++){
+      const sg=segsList[i], nx=segsList[i+1];
       const z0=sg.p0[0],y0=sg.p0[1],z1=sg.p1[0],y1=sg.p1[1];
-      const v0=sAccum/total, v1=(sAccum+sg.len)/total;
-      const rows=[];
-      for(let a=0;a<=seg;a++){
-        const t=a/seg, zz=z0+(z1-z0)*t, yy=y0+(y1-y0)*t, vv=v0+(v1-v0)*t;
-        const rowStart=pos.length/3;
-        for(let b=0;b<=wseg;b++){
-          const uu=b/wseg, xx=(uu-0.5)*W;
-          pos.push(xx,yy,zz); nor.push(sg.n[0],sg.n[1],sg.n[2]); uv.push(uu,vv);
+      if(i===0)pushPt(z0,y0,sg.n[1],sg.n[2]);           /* 始端は面法線のまま */
+      const tv=[EPS];
+      for(let k=1;k<seg;k++){const t=k/seg;if(t>EPS&&t<1-EPS)tv.push(t);}
+      tv.push(1-EPS);
+      tv.forEach(t=>pushPt(z0+(z1-z0)*t, y0+(y1-y0)*t, sg.n[1], sg.n[2]));
+      /* 終端=稜線。次面との平均法線を持つ「1頂点」を共有 → 変位しても割れない */
+      if(nx)pushPt(z1,y1, sg.n[1]+nx.n[1], sg.n[2]+nx.n[2]);
+      else  pushPt(z1,y1, sg.n[1], sg.n[2]);
+    }
+    let total=0;const cum=[0];
+    for(let i=1;i<pts.length;i++){total+=Math.hypot(pts[i].z-pts[i-1].z,pts[i].y-pts[i-1].y);cum.push(total);}
+    /* --- 2) 主面(踏み面+蹴上げ)のストリップ: u=幅[0,MU], v=プロファイル長 --- */
+    const pos=[],nor=[],uv=[],idx=[];
+    const rows=[];
+    for(let i=0;i<pts.length;i++){
+      const P=pts[i], v=cum[i]/total, rs=pos.length/3;
+      for(let b=0;b<=wseg;b++){
+        const t=b/wseg;
+        pos.push((t-0.5)*W, P.y, P.z);
+        nor.push(0,P.ny,P.nz);
+        uv.push(t*MU, v);
+      }
+      rows.push(rs);
+    }
+    for(let i=0;i<pts.length-1;i++)for(let b=0;b<wseg;b++){
+      const r0=rows[i]+b,r1=rows[i]+b+1,r2=rows[i+1]+b,r3=rows[i+1]+b+1;
+      idx.push(r0,r1,r2, r1,r3,r2);
+    }
+    /* --- 3) 左右の側板: 段ごとの矩形を並べて階段形の板にする --- */
+    if(c.sidePanels){
+      const zSpan=N*Td, ySpan=N*Rh;
+      [-1,1].forEach((sign,si)=>{
+        const x=sign*W/2;
+        const u0=(si===0)?(MU+GUT):(MU+GUT+SU+GUT);
+        for(let st=0;st<N;st++){
+          const za=-(st+1)*Td, zb=-st*Td, yb=(st+1)*Rh;
+          const rws=[];
+          for(let a=0;a<=sseg;a++){
+            const yy=(a/sseg)*yb, rs=pos.length/3;
+            for(let b=0;b<=sseg;b++){
+              const zz=za+(zb-za)*(b/sseg);
+              pos.push(x,yy,zz); nor.push(sign,0,0);
+              uv.push(u0+SU*((zz+zSpan)/zSpan), yy/ySpan);
+            }
+            rws.push(rs);
+          }
+          for(let a=0;a<sseg;a++)for(let b=0;b<sseg;b++){
+            const r0=rws[a]+b,r1=rws[a]+b+1,r2=rws[a+1]+b,r3=rws[a+1]+b+1;
+            /* 側板の巻き順: 外向き(±X)になる向きに揃える。
+               raycaster の face.normal は巻き順から算出されるため、これが逆だと角度判定の符号が反転する */
+            if(sign>0)idx.push(r0,r2,r1, r1,r2,r3);
+            else      idx.push(r0,r1,r2, r1,r3,r2);
+          }
         }
-        rows.push(rowStart);
-      }
-      for(let a=0;a<seg;a++)for(let b=0;b<wseg;b++){
-        const r0=rows[a]+b, r1=rows[a]+b+1, r2=rows[a+1]+b, r3=rows[a+1]+b+1;
-        idx.push(r0,r2,r1, r1,r2,r3);
-      }
-      sAccum+=sg.len;
-    });
+      });
+    }
     const g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     g.setAttribute('normal',  new THREE.Float32BufferAttribute(nor,3));
@@ -1355,7 +1405,7 @@
     else{updateShapeButtons();setMsg('R壁: '+(shapeConvex?'凸':'凹'));}
     haptic(0.3,60);
   });
-  /* ===== 架台の移動 操作（v6.0.5）: スティックによる微調整nudge ===== */
+  /* ===== 架台の移動 操作（v6.0.6）: スティックによる微調整nudge ===== */
   function nudgeRig(axis,d){
     const r=document.getElementById('rig');if(!r)return;
     r.object3D.position[axis]+=d;
