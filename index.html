@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v6.0.2 道場・Quest専用）</title>
+  <title>左官MR練習 - 平壁（v6.0.3 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -58,6 +58,7 @@
         placeWalls(this._tp.x, this._tp.z);
         painters.forEach(p=>resetPainter(p));
         sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
+        currentStep=0;timerAccum=0;timerStart=performance.now();timerRunning=true;updateTimerBtnLabel();drawStep();
         setMsg('壁を設置');
       });
       /* Ⓑ: 鏝のモルタルを全量、鏝板に戻す */
@@ -188,7 +189,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v6.0.2 道場</div>
+  <div id="ver">v6.0.3 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -214,6 +215,7 @@
       <canvas id="opsCvs" width="512" height="512"></canvas>
       <canvas id="hudCvs" width="384" height="560"></canvas>
       <canvas id="histCvs" width="512" height="600"></canvas>
+      <canvas id="stepCvs" width="512" height="384"></canvas>
     </a-assets>
     <!-- メイン壁: base roughness=1.0, metalness=0.05（湿り感のために metalness を少し盛る） -->
     <a-entity id="wallMain"
@@ -243,6 +245,22 @@
       <a-box id="resetBtn" width="0.38" height="0.11" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
     </a-entity>
+    <!-- 手順パネル＋経過タイマー（v6.0.3 追加） -->
+    <a-entity position="0.95 1.02 -0.60" rotation="0 -30 0">
+      <a-plane id="stepPanel" width="0.60" height="0.42" material="shader:flat;color:#fff;transparent:true;"></a-plane>
+      <a-entity position="-0.20 -0.285 0.02">
+        <a-box id="nextBtn" width="0.18" height="0.085" depth="0.03" color="#2a5a3a"></a-box>
+        <a-text value="次へ" position="0 0 0.02" align="center" color="#fff" width="1.4"></a-text>
+      </a-entity>
+      <a-entity position="0 -0.285 0.02">
+        <a-box id="timerBtn" width="0.18" height="0.085" depth="0.03" color="#2a4a6a"></a-box>
+        <a-text id="timerBtnTxt" value="計測開始" position="0 0 0.02" align="center" color="#fff" width="1.25"></a-text>
+      </a-entity>
+      <a-entity position="0.20 -0.285 0.02">
+        <a-box id="timerResetBtn" width="0.18" height="0.085" depth="0.03" color="#a44"></a-box>
+        <a-text value="0に戻す" position="0 0 0.02" align="center" color="#fff" width="1.25"></a-text>
+      </a-entity>
+    </a-entity>
     <!-- 履歴パネル（通常は非表示） -->
     <a-plane id="histPanel" width="0.62" height="0.73" position="0 1.35 -0.30" rotation="0 0 0"
              visible="false" material="shader:flat;color:#fff;transparent:true;"></a-plane>
@@ -263,7 +281,7 @@
     </a-entity>
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
-              raycaster="objects:#resetBtn,#recBtn,#histBtn;far:3;lineColor:#fff;lineOpacity:0.4">
+              raycaster="objects:#resetBtn,#recBtn,#histBtn,#nextBtn,#timerBtn,#timerResetBtn;far:3;lineColor:#fff;lineOpacity:0.4">
       <!-- 板本体: 四隅を面取りした八角形 (300mm角, 厚み8mm) -->
       <a-entity hawk-board position="0 0.005 -0.05"></a-entity>
       <!-- 裏の枠: 脚2枚 + 握り棒。板から 50mm 下に握り棒を渡す -->
@@ -302,6 +320,18 @@
   let hawkMortar=100,trowelMortar=0,lastUV=null;
   const TMAX=60,PCOST=0.35;
   let hudMsg='',msgT=null,bestScore=0;
+  /* ===== 経過タイマー（v6.0.3）: 練習全体の経過時間のみを計測 ===== */
+  let timerRunning=false,timerAccum=0,timerStart=0;
+  function timerElapsedMs(){return timerAccum+(timerRunning?(performance.now()-timerStart):0);}
+  function fmtTime(ms){const s=Math.floor(ms/1000),m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+  /* ===== 手順（v6.0.3）: 差し替えやすいよう配列で一元定義 ===== */
+  const STEP_LIST=[
+    '①壁 左→上→右→下 の順番で縁を塗っていく',
+    '②中を真っ直ぐ塗っていく',
+    '③全体を押さえる',
+    '④完成'
+  ];
+  let currentStep=0;
   /* ===== 練習履歴の記録用トラッキング ===== */
   const HIST_KEY='sakan_mr_history_v1';
   let sessionStart=Date.now();   /* 現在の練習の開始時刻（記録 or 壁設置でリセット）*/
@@ -527,7 +557,7 @@
     requestHUD();
   }
   const painters=WIDS.map((_,i)=>createPainter(CIDS[i],HIDS[i],RIDS[i],DIDS[i]));
-  let hudTex=null,washiBg=null,histTex=null;
+  let hudTex=null,washiBg=null,histTex=null,stepTex=null;
   sc.addEventListener('loaded',()=>{
     painters.forEach((p,i)=>{
       drawBase(p);
@@ -565,6 +595,15 @@
       const hm=document.getElementById('histPanel')?.getObject3D('mesh');
       if(hm){hm.material.map=histTex;hm.material.needsUpdate=true;}
     }
+    /* 手順パネルのテクスチャ（v6.0.3）*/
+    const stepCvs=document.getElementById('stepCvs');
+    if(stepCvs){
+      stepTex=new THREE.CanvasTexture(stepCvs);
+      stepTex.minFilter=THREE.LinearFilter;stepTex.magFilter=THREE.LinearFilter;
+      const sm=document.getElementById('stepPanel')?.getObject3D('mesh');
+      if(sm){sm.material.map=stepTex;sm.material.needsUpdate=true;}
+    }
+    updateTimerBtnLabel();drawStep();
     recalcToday();
     prepareWashi();drawOps();drawHUD();
     /* HUD 保険 + ① 濡れの経時的な乾き */
@@ -582,7 +621,7 @@
         }
         if(anyWet)renderRh(p);
       });
-      drawHUD();
+      drawHUD();drawStep();
     },500);
   });
   function markDirty(p){if(p.colorTex)p.colorTex.needsUpdate=true;}
@@ -1083,6 +1122,61 @@
     ctx.textAlign='right';
     ctx.fillText(`${Math.floor(val*100)}`,W*0.87,y+5);
   }
+  /* ===== 手順パネル＋経過タイマー 描画（v6.0.3）===== */
+  function updateTimerBtnLabel(){const t=document.getElementById('timerBtnTxt');if(t)t.setAttribute('value',timerRunning?'一時停止':'計測開始');}
+  function drawStep(){
+    const cvs=document.getElementById('stepCvs');if(!cvs)return;
+    const ctx=cvs.getContext('2d');const W=cvs.width,H=cvs.height;
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#F2E8CE');g.addColorStop(0.5,'#EBE0BE');g.addColorStop(1,'#E2D2A8');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#3a2308';ctx.fillRect(0,0,W,14);ctx.fillRect(0,H-14,W,14);
+    ctx.strokeStyle='rgba(110,70,30,0.5)';ctx.lineWidth=1.4;ctx.strokeRect(16,22,W-32,H-44);
+    ctx.textAlign='center';ctx.textBaseline='alphabetic';
+    ctx.fillStyle='#2a1505';ctx.font='bold 22px "Yu Mincho","Hiragino Mincho ProN","MS Mincho",serif';
+    ctx.fillText('経 過 時 間',W/2,52);
+    ctx.fillStyle=timerRunning?'#2a5a2a':'#7a4015';
+    ctx.font='bold 64px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText(fmtTime(timerElapsedMs()),W/2,116);
+    ctx.fillStyle='#5a2f10';ctx.font='16px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText(timerRunning?'計測中':'停止中',W/2,142);
+    ctx.strokeStyle='rgba(110,70,30,0.5)';ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(W*0.12,160);ctx.lineTo(W*0.88,160);ctx.stroke();
+    ctx.fillStyle='#2a1505';ctx.font='bold 20px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.fillText('手 順',W/2,188);
+    const rowY0=214,rowH=42;
+    ctx.textAlign='left';
+    STEP_LIST.forEach((sTxt,i)=>{
+      const y=rowY0+i*rowH;
+      if(i===currentStep){
+        ctx.fillStyle='rgba(160,40,8,0.14)';
+        if(ctx.roundRect){ctx.beginPath();ctx.roundRect(24,y-24,W-48,34,8);ctx.fill();}
+        else ctx.fillRect(24,y-24,W-48,34);
+        ctx.fillStyle='#a02808';ctx.font='bold 21px "Yu Mincho","Hiragino Mincho ProN",serif';
+      }else{
+        ctx.fillStyle='#8a7250';ctx.font='20px "Yu Mincho","Hiragino Mincho ProN",serif';
+      }
+      ctx.fillText(sTxt,36,y);
+    });
+    if(stepTex)stepTex.needsUpdate=true;
+  }
+  /* 手順「次へ」 */
+  document.getElementById('nextBtn').addEventListener('click',()=>{
+    if(currentStep<STEP_LIST.length-1){currentStep++;setMsg('手順 '+(currentStep+1)+' へ');}
+    else setMsg('最後の手順');
+    haptic(0.3,60);drawStep();
+  });
+  /* タイマー 開始／一時停止 */
+  document.getElementById('timerBtn').addEventListener('click',()=>{
+    if(timerRunning){timerAccum+=performance.now()-timerStart;timerRunning=false;setMsg('計測を止めた');}
+    else{timerStart=performance.now();timerRunning=true;setMsg('計測開始');}
+    updateTimerBtnLabel();haptic(0.3,60);drawStep();
+  });
+  /* タイマー リセット */
+  document.getElementById('timerResetBtn').addEventListener('click',()=>{
+    timerAccum=0;timerStart=performance.now();setMsg('タイマーを戻した');
+    haptic(0.3,60);drawStep();
+  });
   updMortar();
   </script>
 </body>
