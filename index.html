@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v6.0.3 道場・Quest専用）</title>
+  <title>左官MR練習 - 平壁（v6.0.4 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
@@ -51,6 +51,7 @@
       for(let i=0;i<9;i++) this.bpts.push(new THREE.Vector3(0,BY,Z0+i/8*(Z1-Z0)));
       this._wp=new THREE.Vector3();this._fwd=new THREE.Vector3();
       this._tp=new THREE.Vector3();this._hp=new THREE.Vector3();this._bc=new THREE.Vector3();
+      this._hitN=new THREE.Vector3(0,0,1);   /* ヒット面の法線（曲面/複数面の角度評価用）*/
       this.el.addEventListener('abuttondown',()=>{
         const o=this.el.object3D;if(!o)return;
         o.getWorldPosition(this._tp);
@@ -113,7 +114,13 @@
         const mesh=el.getObject3D('mesh');if(!mesh)continue;
         this._wp.copy(this.bpts[4]).applyMatrix4(o.matrixWorld);
         this.rc.set(this._wp,this._fwd);
-        if(this.rc.intersectObject(mesh,true).length){hitEl=el;hitIdx=i;break;}
+        const ints=this.rc.intersectObject(mesh,true);
+        if(ints.length){
+          hitEl=el;hitIdx=i;
+          if(ints[0].face)this._hitN.copy(ints[0].face.normal).transformDirection(mesh.matrixWorld).normalize();
+          else this._hitN.set(0,0,1);
+          break;
+        }
       }
       if(!hitEl){
         if(this.wasContact)snd.stop();
@@ -144,7 +151,7 @@
       const spdF=Math.max(0,Math.min(1,this.spd/15));
       /* ④ コテの角度判定: blade の -Z (this._fwd) と壁面法線 (0,0,1) の角度で塗り品質を変化
          10〜25° の範囲で最大品質、平らすぎ／立ちすぎで塗り係数を落とし、触覚も控えめに */
-      const tiltCos=Math.max(-1,Math.min(1,-this._fwd.z));  /* 1=blade垂直に押し当て, cos(15°)≒0.966=適正 */
+      const tiltCos=Math.max(-1,Math.min(1,-this._fwd.dot(this._hitN)));  /* 曲面/複数面対応: ヒット面法線Nで評価。平面(N=0,0,1)なら従来の -_fwd.z と一致 */
       const tiltDeg=Math.acos(tiltCos)*180/Math.PI;
       let angleFactor;
       if(tiltDeg<5)       angleFactor=0.4;   /* 平らすぎて材料が伸びない */
@@ -189,7 +196,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v6.0.3 道場</div>
+  <div id="ver">v6.0.4 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -245,7 +252,7 @@
       <a-box id="resetBtn" width="0.38" height="0.11" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
     </a-entity>
-    <!-- 手順パネル＋経過タイマー（v6.0.3 追加） -->
+    <!-- 手順パネル＋経過タイマー（v6.0.4 追加） -->
     <a-entity position="0.95 1.02 -0.60" rotation="0 -30 0">
       <a-plane id="stepPanel" width="0.60" height="0.42" material="shader:flat;color:#fff;transparent:true;"></a-plane>
       <a-entity position="-0.20 -0.285 0.02">
@@ -259,6 +266,26 @@
       <a-entity position="0.20 -0.285 0.02">
         <a-box id="timerResetBtn" width="0.18" height="0.085" depth="0.03" color="#a44"></a-box>
         <a-text value="0に戻す" position="0 0 0.02" align="center" color="#fff" width="1.25"></a-text>
+      </a-entity>
+    </a-entity>
+    <!-- 形状セレクト（v6.0.4 追加）: レーザーで押す形状切替ボタン -->
+    <a-entity position="-1.0 1.00 -0.55" rotation="0 35 0">
+      <a-text value="形状切替" position="-0.185 0.078 0.01" align="left" color="#eee" width="1.15"></a-text>
+      <a-entity position="-0.128 0 0.01">
+        <a-box id="shapePlaneBtn" width="0.115" height="0.09" depth="0.03" color="#c08040"></a-box>
+        <a-text value="平壁" position="0 0 0.02" align="center" color="#fff" width="1.0"></a-text>
+      </a-entity>
+      <a-entity position="0.0 0 0.01">
+        <a-box id="shapeRBtn" width="0.115" height="0.09" depth="0.03" color="#555"></a-box>
+        <a-text value="R壁" position="0 0 0.02" align="center" color="#fff" width="1.0"></a-text>
+      </a-entity>
+      <a-entity position="0.128 0 0.01">
+        <a-box id="shapeStairBtn" width="0.115" height="0.09" depth="0.03" color="#555"></a-box>
+        <a-text value="階段" position="0 0 0.02" align="center" color="#fff" width="1.0"></a-text>
+      </a-entity>
+      <a-entity position="0.128 -0.115 0.01">
+        <a-box id="shapeRToggleBtn" width="0.115" height="0.085" depth="0.03" color="#3a6a6a"></a-box>
+        <a-text id="shapeRToggleTxt" value="凸R" position="0 0 0.02" align="center" color="#fff" width="1.0"></a-text>
       </a-entity>
     </a-entity>
     <!-- 履歴パネル（通常は非表示） -->
@@ -281,7 +308,7 @@
     </a-entity>
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
-              raycaster="objects:#resetBtn,#recBtn,#histBtn,#nextBtn,#timerBtn,#timerResetBtn;far:3;lineColor:#fff;lineOpacity:0.4">
+              raycaster="objects:#resetBtn,#recBtn,#histBtn,#nextBtn,#timerBtn,#timerResetBtn,#shapePlaneBtn,#shapeRBtn,#shapeStairBtn,#shapeRToggleBtn;far:3;lineColor:#fff;lineOpacity:0.4">
       <!-- 板本体: 四隅を面取りした八角形 (300mm角, 厚み8mm) -->
       <a-entity hawk-board position="0 0.005 -0.05"></a-entity>
       <!-- 裏の枠: 脚2枚 + 握り棒。板から 50mm 下に握り棒を渡す -->
@@ -320,11 +347,11 @@
   let hawkMortar=100,trowelMortar=0,lastUV=null;
   const TMAX=60,PCOST=0.35;
   let hudMsg='',msgT=null,bestScore=0;
-  /* ===== 経過タイマー（v6.0.3）: 練習全体の経過時間のみを計測 ===== */
+  /* ===== 経過タイマー（v6.0.4）: 練習全体の経過時間のみを計測 ===== */
   let timerRunning=false,timerAccum=0,timerStart=0;
   function timerElapsedMs(){return timerAccum+(timerRunning?(performance.now()-timerStart):0);}
   function fmtTime(ms){const s=Math.floor(ms/1000),m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
-  /* ===== 手順（v6.0.3）: 差し替えやすいよう配列で一元定義 ===== */
+  /* ===== 手順（v6.0.4）: 差し替えやすいよう配列で一元定義 ===== */
   const STEP_LIST=[
     '①壁 左→上→右→下 の順番で縁を塗っていく',
     '②中を真っ直ぐ塗っていく',
@@ -332,6 +359,16 @@
     '④完成'
   ];
   let currentStep=0;
+  /* ===== 練習対象の形状（v6.0.4）: 主要パラメータは全てここで一元定義 ===== */
+  const SHAPE_CFG={
+    plane :{ w:1.2, h:1.0, segW:48, segH:40 },
+    /* R壁: 半径R300mm・弧90°（凸/凹は shapeConvex で切替）*/
+    rwall :{ radius:0.30, sweepDeg:90, h:1.0, segW:48, segH:40 },
+    /* 階段: 踏み面250mm・蹴上げ180mm・幅900mm・3段 */
+    stairs:{ tread:0.25, riser:0.18, width:0.90, steps:3, seg:6, widthSeg:30 }
+  };
+  let activeShape='plane';
+  let shapeConvex=true;   /* R壁: true=凸R / false=凹R */
   /* ===== 練習履歴の記録用トラッキング ===== */
   const HIST_KEY='sakan_mr_history_v1';
   let sessionStart=Date.now();   /* 現在の練習の開始時刻（記録 or 壁設置でリセット）*/
@@ -595,7 +632,7 @@
       const hm=document.getElementById('histPanel')?.getObject3D('mesh');
       if(hm){hm.material.map=histTex;hm.material.needsUpdate=true;}
     }
-    /* 手順パネルのテクスチャ（v6.0.3）*/
+    /* 手順パネルのテクスチャ（v6.0.4）*/
     const stepCvs=document.getElementById('stepCvs');
     if(stepCvs){
       stepTex=new THREE.CanvasTexture(stepCvs);
@@ -604,6 +641,7 @@
       if(sm){sm.material.map=stepTex;sm.material.needsUpdate=true;}
     }
     updateTimerBtnLabel();drawStep();
+    applyShape('plane');   /* v6.0.4: 初期形状を確定（自作ジオメトリに統一）*/
     recalcToday();
     prepareWashi();drawOps();drawHUD();
     /* HUD 保険 + ① 濡れの経時的な乾き */
@@ -1122,7 +1160,7 @@
     ctx.textAlign='right';
     ctx.fillText(`${Math.floor(val*100)}`,W*0.87,y+5);
   }
-  /* ===== 手順パネル＋経過タイマー 描画（v6.0.3）===== */
+  /* ===== 手順パネル＋経過タイマー 描画（v6.0.4）===== */
   function updateTimerBtnLabel(){const t=document.getElementById('timerBtnTxt');if(t)t.setAttribute('value',timerRunning?'一時停止':'計測開始');}
   function drawStep(){
     const cvs=document.getElementById('stepCvs');if(!cvs)return;
@@ -1176,6 +1214,119 @@
   document.getElementById('timerResetBtn').addEventListener('click',()=>{
     timerAccum=0;timerStart=performance.now();setMsg('タイマーを戻した');
     haptic(0.3,60);drawStep();
+  });
+  /* ===== 形状ジオメトリ生成（v6.0.4）=====
+     いずれも UV を [0,1]^2 に収め、法線を頂点ごとに持たせる。
+     → 既存のキャンバス塗り/高さマップ/変位/スコア計算はUV基準なのでそのまま流用できる。 */
+  function buildPlaneGeo(){
+    const c=SHAPE_CFG.plane;
+    return new THREE.PlaneGeometry(c.w,c.h,c.segW,c.segH);   /* UV[0,1], 法線+Z, 原点中心 */
+  }
+  /* R壁（曲面）: 縦軸まわりに曲げた円筒面の一部。凸/凹で法線と反りを反転 */
+  function buildRGeo(){
+    const c=SHAPE_CFG.rwall;
+    const R=c.radius, sweep=c.sweepDeg*Math.PI/180, H=c.h, segW=c.segW, segH=c.segH;
+    const convex=shapeConvex;
+    const pos=[],nor=[],uv=[],idx=[];
+    for(let j=0;j<=segH;j++){
+      const v=j/segH, y=(v-0.5)*H;
+      for(let i=0;i<=segW;i++){
+        const u=i/segW, a=(u-0.5)*sweep;
+        let x,z,nx,nz;
+        if(convex){ x=R*Math.sin(a); z=R*Math.cos(a)-R; nx=Math.sin(a); nz=Math.cos(a); }
+        else      { x=R*Math.sin(a); z=R-R*Math.cos(a); nx=-Math.sin(a); nz=Math.cos(a); }
+        pos.push(x,y,z); nor.push(nx,0,nz); uv.push(u,v);
+      }
+    }
+    for(let j=0;j<segH;j++)for(let i=0;i<segW;i++){
+      const a0=j*(segW+1)+i,b0=a0+1,c0=a0+(segW+1),d0=c0+1;
+      idx.push(a0,c0,b0, b0,c0,d0);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('normal',  new THREE.Float32BufferAttribute(nor,3));
+    g.setAttribute('uv',      new THREE.Float32BufferAttribute(uv,2));
+    g.setIndex(idx);
+    return g;
+  }
+  /* 階段: 側面プロファイル(蹴上げ→踏み面…)を幅方向に押し出し。
+     プロファイル長→v, 幅→u に展開して1枚のUVチャートに収める。
+     蹴上げ面の法線=+Z（正面）, 踏み面の法線=+Y（上）。面境界で頂点を分けて稜線をシャープに保つ。*/
+  function buildStairsGeo(){
+    const c=SHAPE_CFG.stairs;
+    const W=c.width, Td=c.tread, Rh=c.riser, N=c.steps, seg=c.seg, wseg=c.widthSeg;
+    const segsList=[];
+    let y=0,z=0;
+    for(let s2=0;s2<N;s2++){
+      segsList.push({p0:[z,y], p1:[z,y+Rh], n:[0,0,1]});  y+=Rh;      /* 蹴上げ(垂直) */
+      segsList.push({p0:[z,y], p1:[z-Td,y], n:[0,1,0]});  z-=Td;      /* 踏み面(水平) */
+    }
+    let total=0;
+    segsList.forEach(sg=>{const dz=sg.p1[0]-sg.p0[0],dy=sg.p1[1]-sg.p0[1];sg.len=Math.hypot(dz,dy);total+=sg.len;});
+    const pos=[],nor=[],uv=[],idx=[];
+    let sAccum=0;
+    segsList.forEach(sg=>{
+      const z0=sg.p0[0],y0=sg.p0[1],z1=sg.p1[0],y1=sg.p1[1];
+      const v0=sAccum/total, v1=(sAccum+sg.len)/total;
+      const rows=[];
+      for(let a=0;a<=seg;a++){
+        const t=a/seg, zz=z0+(z1-z0)*t, yy=y0+(y1-y0)*t, vv=v0+(v1-v0)*t;
+        const rowStart=pos.length/3;
+        for(let b=0;b<=wseg;b++){
+          const uu=b/wseg, xx=(uu-0.5)*W;
+          pos.push(xx,yy,zz); nor.push(sg.n[0],sg.n[1],sg.n[2]); uv.push(uu,vv);
+        }
+        rows.push(rowStart);
+      }
+      for(let a=0;a<seg;a++)for(let b=0;b<wseg;b++){
+        const r0=rows[a]+b, r1=rows[a]+b+1, r2=rows[a+1]+b, r3=rows[a+1]+b+1;
+        idx.push(r0,r2,r1, r1,r2,r3);
+      }
+      sAccum+=sg.len;
+    });
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('normal',  new THREE.Float32BufferAttribute(nor,3));
+    g.setAttribute('uv',      new THREE.Float32BufferAttribute(uv,2));
+    g.setIndex(idx);
+    g.center();   /* 練習しやすい高さに置けるよう原点中心へ */
+    return g;
+  }
+  /* 現在アクティブなメッシュのジオメトリと塗り面を差し替える */
+  function applyShape(key){
+    activeShape=key;
+    const el=document.getElementById('wallMain');if(!el)return;
+    const mesh=el.getObject3D('mesh');if(!mesh)return;
+    let geo;
+    if(key==='rwall')geo=buildRGeo();
+    else if(key==='stairs')geo=buildStairsGeo();
+    else geo=buildPlaneGeo();
+    const old=mesh.geometry;
+    mesh.geometry=geo;
+    if(old&&old!==geo)old.dispose();
+    mesh.material.side=THREE.DoubleSide;   /* 曲面/複数面でも裏面カリングで消えないように */
+    mesh.material.needsUpdate=true;
+    const showGuide=(key==='plane');
+    ['guideT','guideB','guideL','guideR'].forEach(id=>{const gg=document.getElementById(id);if(gg)gg.setAttribute('visible',showGuide);});
+    painters.forEach(p=>resetPainter(p));   /* 新形状で塗りをやり直し */
+    sessionStart=Date.now();kaeshiCount=0;angleGoodTicks=0;angleTotalTicks=0;
+    updateShapeButtons();
+    const nm={plane:'平壁',rwall:(shapeConvex?'凸R壁':'凹R壁'),stairs:'階段'};
+    setMsg('形状: '+nm[key]);
+  }
+  function updateShapeButtons(){
+    const map={plane:'shapePlaneBtn',rwall:'shapeRBtn',stairs:'shapeStairBtn'};
+    Object.keys(map).forEach(k=>{const b=document.getElementById(map[k]);if(b)b.setAttribute('color',k===activeShape?'#c08040':'#555');});
+    const t=document.getElementById('shapeRToggleTxt');if(t)t.setAttribute('value',shapeConvex?'凸R':'凹R');
+  }
+  document.getElementById('shapePlaneBtn').addEventListener('click',()=>{applyShape('plane');haptic(0.3,60);});
+  document.getElementById('shapeRBtn').addEventListener('click',()=>{applyShape('rwall');haptic(0.3,60);});
+  document.getElementById('shapeStairBtn').addEventListener('click',()=>{applyShape('stairs');haptic(0.3,60);});
+  document.getElementById('shapeRToggleBtn').addEventListener('click',()=>{
+    shapeConvex=!shapeConvex;
+    if(activeShape==='rwall')applyShape('rwall');
+    else{updateShapeButtons();setMsg('R壁: '+(shapeConvex?'凸':'凹'));}
+    haptic(0.3,60);
   });
   updMortar();
   </script>
