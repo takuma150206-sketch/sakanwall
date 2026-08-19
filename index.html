@@ -2,20 +2,30 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v6.0.6 道場・Quest専用）</title>
+  <title>左官MR練習 - 平壁（v6.0.7 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
+  /* 刃の形状（v6.0.7）: TROWEL_CFG の寸法から生成。鏝を替えると build() で作り直す */
   AFRAME.registerComponent('blade-shape',{
-    init:function(){
-      const hw=0.042,RECT=0.200,TOTAL=0.240,D=0.0025;
+    init:function(){this.build();},
+    build:function(){
+      const T=TROWEL_CFG[activeTrowel];
+      const hw=T.bladeW/2, TOTAL=T.bladeL, D=T.thick;
+      const RECT=(T.tip==='square')?T.bladeL:T.rectL;
       const bot=-TOTAL/2,rTop=bot+RECT,tip=bot+TOTAL;
       const sh=new THREE.Shape();
-      sh.moveTo(-hw,bot);sh.lineTo(hw,bot);sh.lineTo(hw,rTop);sh.lineTo(0,tip);sh.lineTo(-hw,rTop);sh.closePath();
+      if(T.tip==='square'){   /* 木鏝など: 先端が尖らない長方形 */
+        sh.moveTo(-hw,bot);sh.lineTo(hw,bot);sh.lineTo(hw,tip);sh.lineTo(-hw,tip);sh.closePath();
+      }else{                  /* 剣先: 長方形＋三角の先 */
+        sh.moveTo(-hw,bot);sh.lineTo(hw,bot);sh.lineTo(hw,rTop);sh.lineTo(0,tip);sh.lineTo(-hw,rTop);sh.closePath();
+      }
       const geo=new THREE.ExtrudeGeometry(sh,{depth:D,bevelEnabled:false});
       geo.translate(0,0,-D/2);
+      const old=this.el.getObject3D('mesh');
+      if(old){try{old.geometry.dispose();old.material.dispose();}catch(e){}}
       this.el.setObject3D('mesh',new THREE.Mesh(geo,
-        new THREE.MeshStandardMaterial({color:0xc4c6ca,metalness:0.90,roughness:0.14,side:THREE.DoubleSide})));
+        new THREE.MeshStandardMaterial({color:T.color,metalness:T.metalness,roughness:T.roughness,side:THREE.DoubleSide})));
     }
   });
   /* 鏝板の板本体: 四隅を面取りした八角形（実物写真に準拠） */
@@ -46,9 +56,8 @@
          Blade rectangular 部分は wrapper local で y=[-0.085, 0.115] → rightHand local で z=[0.085, -0.115]。
          さらに wrapper position="0 0 -0.0175"（柄の中心をコントローラー原点に合わせる）で
          全体が -0.0175 分シフトするので、bpts の Z もその分シフト。*/
-      const BY=-0.042,Z0=0.0675,Z1=-0.1325;
-      this.bpts=[];
-      for(let i=0;i<9;i++) this.bpts.push(new THREE.Vector3(0,BY,Z0+i/8*(Z1-Z0)));
+      trowelComp=this;
+      buildBpts(this);   /* 刃のサンプル点は鏝寸法から導出（v6.0.7）*/
       this._wp=new THREE.Vector3();this._fwd=new THREE.Vector3();
       this._tp=new THREE.Vector3();this._hp=new THREE.Vector3();this._bc=new THREE.Vector3();
       this._hitN=new THREE.Vector3(0,0,1);   /* ヒット面の法線（曲面/複数面の角度評価用）*/
@@ -75,7 +84,7 @@
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
         hawkMortar=100;updMortar();setMsg('鏝板補充');
       });
-      /* 右グリップ: 架台を掴んで移動（v6.0.6）。左グリップは補充のままなので競合しない */
+      /* 右グリップ: 架台を掴んで移動（v6.0.7）。左グリップは補充のままなので競合しない */
       this.el.addEventListener('gripdown',()=>{window._grabbing=true;this._grabInit=false;setMsg('架台を掴んだ');haptic(0.4,80);});
       this.el.addEventListener('gripup',()=>{window._grabbing=false;setMsg('架台を固定');haptic(0.3,60);});
     },
@@ -92,7 +101,7 @@
         if(s?.inputSources)for(const src of s.inputSources)
           if(src.handedness==='right'&&src.gamepad?.hapticActuators?.length){window._rgp=src.gamepad;break;}
       }catch(e){}}
-      /* ★ 架台の掴み移動（v6.0.6）: 右グリップ中は塗り/コテ返しを止めて平行移動のみ */
+      /* ★ 架台の掴み移動（v6.0.7）: 右グリップ中は塗り/コテ返しを止めて平行移動のみ */
       if(window._grabbing){
         const rig=document.getElementById('rig');
         if(rig){
@@ -115,8 +124,8 @@
           if(!this.heq){this.heq=o.quaternion.clone();this.hma=0;if(hawkMortar>0)setMsg('手首をひねれ');}
           this.hma=Math.max(this.hma,o.quaternion.angleTo(this.heq));
           if(this.hma>Math.PI*0.22&&hawkMortar>0){
-            const amt=Math.min(50,hawkMortar);hawkMortar=Math.max(0,hawkMortar-amt);
-            trowelMortar=Math.min(78,trowelMortar+amt);
+            const amt=Math.min(TMAX*0.83,hawkMortar);hawkMortar=Math.max(0,hawkMortar-amt);
+            trowelMortar=Math.min(TMAX*1.3,trowelMortar+amt);
             this.kgd=true;this.heq=null;this.hma=0;kaeshiCount++;
             updMortar();setMsg('コテ返し');haptic(0.55,150);snd.playKG();
           }
@@ -171,12 +180,17 @@
          10〜25° の範囲で最大品質、平らすぎ／立ちすぎで塗り係数を落とし、触覚も控えめに */
       const tiltCos=Math.max(-1,Math.min(1,-this._fwd.dot(this._hitN)));  /* 曲面/複数面対応: ヒット面法線Nで評価。平面(N=0,0,1)なら従来の -_fwd.z と一致 */
       const tiltDeg=Math.acos(tiltCos)*180/Math.PI;
+      const TRC=TROWEL_CFG[activeTrowel];
+      /* しなる鏝(仕上/柳刃)はR壁で曲面に追従するため許容角を広げる */
+      const fx=(activeShape==='rwall')?TRC.flex*8:0;
+      const AL=TRC.angleLo-fx, AH=TRC.angleHi+fx;
       let angleFactor;
-      if(tiltDeg<5)       angleFactor=0.4;   /* 平らすぎて材料が伸びない */
-      else if(tiltDeg<10) angleFactor=0.7;   /* やや浅い */
-      else if(tiltDeg<=25)angleFactor=1.0;   /* 適正な塗り角度 */
-      else if(tiltDeg<=35)angleFactor=0.7;   /* やや深い */
-      else                angleFactor=0.4;   /* 立ちすぎ、削れる */
+      if(tiltDeg<AL-5)       angleFactor=0.4;   /* 平らすぎて材料が伸びない */
+      else if(tiltDeg<AL)    angleFactor=0.7;   /* やや浅い */
+      else if(tiltDeg<=AH)   angleFactor=1.0;   /* 適正な塗り角度 */
+      else if(tiltDeg<=AH+10)angleFactor=0.7;   /* やや深い */
+      else                   angleFactor=0.4;   /* 立ちすぎ、削れる */
+      window._angleLo=AL;window._angleHi=AH;
       window._angleDeg=tiltDeg;
       window._angleFactor=angleFactor;
       window._contactActive=true;
@@ -214,7 +228,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v6.0.6 道場</div>
+  <div id="ver">v6.0.7 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -242,7 +256,7 @@
       <canvas id="histCvs" width="512" height="600"></canvas>
       <canvas id="stepCvs" width="512" height="384"></canvas>
     </a-assets>
-    <!-- 架台（v6.0.6）: 練習対象＋塗代ガイドをまとめて平行移動する親エンティティ。掴み移動/nudgeで動かす -->
+    <!-- 架台（v6.0.7）: 練習対象＋塗代ガイドをまとめて平行移動する親エンティティ。掴み移動/nudgeで動かす -->
     <a-entity id="rig" position="0 0 0">
     <!-- メイン壁: base roughness=1.0, metalness=0.05（湿り感のために metalness を少し盛る） -->
     <a-entity id="wallMain"
@@ -273,7 +287,7 @@
       <a-box id="resetBtn" width="0.38" height="0.11" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
     </a-entity>
-    <!-- 手順パネル＋経過タイマー（v6.0.6 追加） -->
+    <!-- 手順パネル＋経過タイマー（v6.0.7 追加） -->
     <a-entity position="0.95 1.02 -0.60" rotation="0 -30 0">
       <a-plane id="stepPanel" width="0.60" height="0.42" material="shader:flat;color:#fff;transparent:true;"></a-plane>
       <a-entity position="-0.20 -0.285 0.02">
@@ -289,7 +303,7 @@
         <a-text value="0に戻す" position="0 0 0.02" align="center" color="#fff" width="1.25"></a-text>
       </a-entity>
     </a-entity>
-    <!-- 形状セレクト（v6.0.6 追加）: レーザーで押す形状切替ボタン -->
+    <!-- 形状セレクト（v6.0.7 追加）: レーザーで押す形状切替ボタン -->
     <a-entity position="-1.0 1.00 -0.55" rotation="0 35 0">
       <a-text value="形状切替" position="-0.185 0.078 0.01" align="left" color="#eee" width="1.15"></a-text>
       <a-entity position="-0.128 0 0.01">
@@ -307,6 +321,26 @@
       <a-entity position="0.128 -0.115 0.01">
         <a-box id="shapeRToggleBtn" width="0.115" height="0.085" depth="0.03" color="#3a6a6a"></a-box>
         <a-text id="shapeRToggleTxt" value="凸R" position="0 0 0.02" align="center" color="#fff" width="1.0"></a-text>
+      </a-entity>
+    </a-entity>
+    <!-- 鏝セレクト（v6.0.7 追加）: レーザーで押す鏝切替ボタン -->
+    <a-entity position="-1.0 0.86 -0.55" rotation="0 35 0">
+      <a-text value="鏝切替" position="-0.185 0.075 0.01" align="left" color="#eee" width="1.15"></a-text>
+      <a-entity position="-0.144 0 0.01">
+        <a-box id="trowelBtn0" width="0.088" height="0.085" depth="0.03" color="#c08040"></a-box>
+        <a-text value="中塗" position="0 0 0.02" align="center" color="#fff" width="0.85"></a-text>
+      </a-entity>
+      <a-entity position="-0.048 0 0.01">
+        <a-box id="trowelBtn1" width="0.088" height="0.085" depth="0.03" color="#555"></a-box>
+        <a-text value="仕上" position="0 0 0.02" align="center" color="#fff" width="0.85"></a-text>
+      </a-entity>
+      <a-entity position="0.048 0 0.01">
+        <a-box id="trowelBtn2" width="0.088" height="0.085" depth="0.03" color="#555"></a-box>
+        <a-text value="木" position="0 0 0.02" align="center" color="#fff" width="0.85"></a-text>
+      </a-entity>
+      <a-entity position="0.144 0 0.01">
+        <a-box id="trowelBtn3" width="0.088" height="0.085" depth="0.03" color="#555"></a-box>
+        <a-text value="柳刃" position="0 0 0.02" align="center" color="#fff" width="0.85"></a-text>
       </a-entity>
     </a-entity>
     <!-- 履歴パネル（通常は非表示） -->
@@ -329,7 +363,7 @@
     </a-entity>
     <!-- 左手 -->
     <a-entity id="leftHand" laser-controls="hand:left"
-              raycaster="objects:#resetBtn,#recBtn,#histBtn,#nextBtn,#timerBtn,#timerResetBtn,#shapePlaneBtn,#shapeRBtn,#shapeStairBtn,#shapeRToggleBtn;far:3;lineColor:#fff;lineOpacity:0.4">
+              raycaster="objects:#resetBtn,#recBtn,#histBtn,#nextBtn,#timerBtn,#timerResetBtn,#shapePlaneBtn,#shapeRBtn,#shapeStairBtn,#shapeRToggleBtn,#trowelBtn0,#trowelBtn1,#trowelBtn2,#trowelBtn3;far:3;lineColor:#fff;lineOpacity:0.4">
       <!-- 板本体: 四隅を面取りした八角形 (300mm角, 厚み8mm) -->
       <a-entity hawk-board position="0 0.005 -0.05"></a-entity>
       <!-- 裏の枠: 脚2枚 + 握り棒。板から 50mm 下に握り棒を渡す -->
@@ -364,15 +398,57 @@
   /* ハプティクス */
   window._rgp=null;
   function haptic(i,ms){try{window._rgp?.hapticActuators?.[0]?.pulse(i,ms);}catch(e){}}
+  /* ===== 鏝の種類（v6.0.7）: 寸法・質感・挙動を一元定義。配列順がボタンの並び順 =====
+     bladeW/bladeL/rectL/thick … 刃の実寸(m)。tip:'point'=剣先, 'square'=角(木鏝)
+     capacity … 刃に持てる材料量(旧TMAX)  paintGain … 盛りやすさ  smoothGain … 均し/押さえの効き
+     wetGain … 艶の出やすさ(木鏝は低い)   angleLo/Hi … 適正な鏝角度(度)
+     flex … しなり。R壁で角度許容が広がる sndTone … 塗り音の高さ倍率(木鏝は低く鈍い) */
+  const TROWEL_CFG=[
+    { id:'nakanuri', name:'中塗鏝', short:'中塗',
+      bladeW:0.084, bladeL:0.240, rectL:0.200, thick:0.0025, tip:'point',
+      color:0xc4c6ca, metalness:0.90, roughness:0.14,
+      capacity:60, paintGain:1.00, smoothGain:1.00, wetGain:1.00,
+      angleLo:10, angleHi:25, flex:0.0, sndTone:1.00 },
+    { id:'shiage', name:'仕上鏝', short:'仕上',
+      bladeW:0.075, bladeL:0.240, rectL:0.205, thick:0.0015, tip:'point',
+      color:0xd8dade, metalness:0.96, roughness:0.06,
+      capacity:45, paintGain:0.75, smoothGain:1.60, wetGain:1.50,
+      angleLo:5,  angleHi:20, flex:0.6, sndTone:1.15 },
+    { id:'kigote', name:'木鏝', short:'木',
+      bladeW:0.090, bladeL:0.210, rectL:0.210, thick:0.008, tip:'square',
+      color:0xC9A876, metalness:0.0, roughness:0.85,
+      capacity:55, paintGain:1.10, smoothGain:0.80, wetGain:0.25,
+      angleLo:10, angleHi:30, flex:0.0, sndTone:0.55 },
+    { id:'yanagiba', name:'柳刃鏝', short:'柳刃',
+      bladeW:0.040, bladeL:0.230, rectL:0.150, thick:0.002, tip:'point',
+      color:0xc4c6ca, metalness:0.90, roughness:0.14,
+      capacity:25, paintGain:0.90, smoothGain:0.90, wetGain:1.00,
+      angleLo:10, angleHi:25, flex:0.3, sndTone:1.00 }
+  ];
+  let activeTrowel=0, trowelComp=null;
+  /* 刃のサンプル点を刃寸法から導出（v6.0.7）。
+     従来は 240mm 刃前提の手計算定数(Z0=0.0675/Z1=-0.1325)だった。
+     wrapper の -90°X回転で (0,y,z)→(x,z,-y)、さらに wrapper position z=-0.0175 が乗るため
+     rightHand local の z = -(0.035 + y_blade) - 0.0175 で求まる。*/
+  function buildBpts(comp){
+    const T=TROWEL_CFG[activeTrowel];
+    const TOTAL=T.bladeL, RECT=(T.tip==='square')?T.bladeL:T.rectL;
+    const BOFF_Y=0.035, BOFF_Z=-0.042, WRAP_Z=-0.0175;
+    const Z0=-(BOFF_Y-TOTAL/2)+WRAP_Z;
+    const Z1=-(BOFF_Y-TOTAL/2+RECT)+WRAP_Z;
+    comp.bpts=[];
+    for(let i=0;i<9;i++) comp.bpts.push(new THREE.Vector3(0,BOFF_Z,Z0+i/8*(Z1-Z0)));
+  }
   /* モルタル状態 */
   let hawkMortar=100,trowelMortar=0,lastUV=null;
-  const TMAX=60,PCOST=0.35;
+  let TMAX=TROWEL_CFG[0].capacity;
+  const PCOST=0.35;
   let hudMsg='',msgT=null,bestScore=0;
-  /* ===== 経過タイマー（v6.0.6）: 練習全体の経過時間のみを計測 ===== */
+  /* ===== 経過タイマー（v6.0.7）: 練習全体の経過時間のみを計測 ===== */
   let timerRunning=false,timerAccum=0,timerStart=0;
   function timerElapsedMs(){return timerAccum+(timerRunning?(performance.now()-timerStart):0);}
   function fmtTime(ms){const s=Math.floor(ms/1000),m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
-  /* ===== 手順（v6.0.6）: 差し替えやすいよう配列で一元定義 ===== */
+  /* ===== 手順（v6.0.7）: 差し替えやすいよう配列で一元定義 ===== */
   const STEP_LIST=[
     '①壁 左→上→右→下 の順番で縁を塗っていく',
     '②中を真っ直ぐ塗っていく',
@@ -380,7 +456,7 @@
     '④完成'
   ];
   let currentStep=0;
-  /* ===== 練習対象の形状（v6.0.6）: 主要パラメータは全てここで一元定義 ===== */
+  /* ===== 練習対象の形状（v6.0.7）: 主要パラメータは全てここで一元定義 ===== */
   const SHAPE_CFG={
     plane :{ w:1.2, h:1.0, segW:48, segH:40 },
     /* R壁: 半径R300mm・弧90°（凸/凹は shapeConvex で切替）*/
@@ -396,7 +472,7 @@
   };
   let activeShape='plane';
   let shapeConvex=true;   /* R壁: true=凸R / false=凹R */
-  /* ===== 架台の移動（v6.0.6）: 移動/微調整パラメータを一元定義 ===== */
+  /* ===== 架台の移動（v6.0.7）: 移動/微調整パラメータを一元定義 ===== */
   const MOVE_CFG={
     nudgeStep:0.015,        /* スティック微調整の1刻み (m) ≒1.5cm */
     nudgeThreshold:0.55,    /* スティックの倒し込み判定閾値 */
@@ -469,9 +545,13 @@
        radius=0.012 の base sphere が満載時に 幅42mm × 長さ204mm × 盛り高さ28mm の細長カマボコに */
     const rp=Math.pow(r,0.7);
     const opac=(Math.min(1,r*1.1)*0.9).toFixed(2);
-    const sxW=(0.15+rp*1.60).toFixed(3);  /* 幅 X: 0.15→1.75 */
-    const syL=(0.30+rp*8.20).toFixed(3);  /* 長さ Y: 0.30→8.5 */
-    const szD=(0.10+rp*1.05).toFixed(3);  /* 盛り高さ Z: 0.10→1.15 */
+    /* v6.0.7: 満載時に「刃幅の半分 × 長方形部の長さ」を覆うよう、刃寸法から倍率を算出 */
+    const T=TROWEL_CFG[activeTrowel];
+    const RECTL=(T.tip==='square')?T.bladeL:T.rectL;
+    const maxW=(T.bladeW/2)/0.024, maxL=(RECTL*1.02)/0.024;
+    const sxW=(0.15+rp*(maxW-0.15)).toFixed(3);  /* 幅 X */
+    const syL=(0.30+rp*(maxL-0.30)).toFixed(3);  /* 長さ Y */
+    const szD=(0.10+rp*1.05).toFixed(3);         /* 盛り高さ Z */
     const mEl=document.getElementById('tMortar');
     if(mEl){
       mEl.setAttribute('scale',`${sxW} ${syL} ${szD}`);
@@ -490,8 +570,10 @@
        - 高域ガリガリ寄りだったのを、中低域body重視に転換
        - playbackRate を 1.1-1.5 から 0.95-1.2 に落として粒を少しゆったり戻す
        - HP を大きく下げて body を復活 */
-    _paintFreq(spd){return 2000+Math.min(spd,20)*80;},    /* 主層 lowpass 天井 (paint: 2000-3600 Hz) */
-    _smoothFreq(spd){return 3500+Math.min(spd,20)*130;},  /* 主層 lowpass 天井 (smooth: 3500-6100 Hz) */
+    /* v6.0.7: 鏝の材質で音の高さを変える（木鏝=低く鈍い / 仕上鏝=硬く高い）*/
+    tn(){try{return TROWEL_CFG[activeTrowel].sndTone;}catch(e){return 1;}},
+    _paintFreq(spd){return (2000+Math.min(spd,20)*80)*this.tn();},
+    _smoothFreq(spd){return (3500+Math.min(spd,20)*130)*this.tn();},
     start(spd,mode){if(!this.ctx||!this.nb)return;this.stop();
       this.mode=mode;
       const isPaint=mode==='paint';
@@ -500,14 +582,14 @@
       const s=this.ctx.createBufferSource();s.buffer=this.nb;s.loop=true;
       s.playbackRate.value=isPaint?0.95:1.2;
       this.fnHP=this.ctx.createBiquadFilter();this.fnHP.type='highpass';
-      this.fnHP.frequency.value=isPaint?300:600;  /* HP を大きく下げて中低域body復活 */
+      this.fnHP.frequency.value=(isPaint?300:600)*this.tn();  /* HP を大きく下げて中低域body復活 */
       this.fn=this.ctx.createBiquadFilter();this.fn.type='lowpass';
       this.fn.frequency.value=isPaint?this._paintFreq(spd):this._smoothFreq(spd);
       /* grit層: 中域 bandpass 低Q + playbackRate ≈1 */
       const s2=this.ctx.createBufferSource();s2.buffer=this.nb;s2.loop=true;
       s2.playbackRate.value=isPaint?0.9:1.1;
       const sec=this.ctx.createBiquadFilter();sec.type='bandpass';
-      sec.frequency.value=isPaint?1200:2500;
+      sec.frequency.value=(isPaint?1200:2500)*this.tn();
       sec.Q.value=3;
       const sg=this.ctx.createGain();sg.gain.value=isPaint?0.08:0.07;
       this.gn=this.ctx.createGain();this.gn.gain.setValueAtTime(0,now);
@@ -575,7 +657,7 @@
       s5.start(now);s5.stop(now+0.200);}
   };
   /* 壁・塗代ガイド配置 */
-  /* 架台の水平配置（v6.0.6）: 壁・ガイドはrigの子。rigを平行移動するだけで整合が保たれる。
+  /* 架台の水平配置（v6.0.7）: 壁・ガイドはrigの子。rigを平行移動するだけで整合が保たれる。
      Y(高さ)は掴み移動/nudgeの結果を尊重して据え置く。*/
   function placeWalls(cx,cz){
     const rig=document.getElementById('rig');if(!rig)return;
@@ -662,7 +744,7 @@
       const hm=document.getElementById('histPanel')?.getObject3D('mesh');
       if(hm){hm.material.map=histTex;hm.material.needsUpdate=true;}
     }
-    /* 手順パネルのテクスチャ（v6.0.6）*/
+    /* 手順パネルのテクスチャ（v6.0.7）*/
     const stepCvs=document.getElementById('stepCvs');
     if(stepCvs){
       stepTex=new THREE.CanvasTexture(stepCvs);
@@ -671,7 +753,8 @@
       if(sm){sm.material.map=stepTex;sm.material.needsUpdate=true;}
     }
     updateTimerBtnLabel();drawStep();
-    applyShape('plane');   /* v6.0.6: 初期形状を確定（自作ジオメトリに統一）*/
+    applyShape('plane');   /* v6.0.7: 初期形状を確定（自作ジオメトリに統一）*/
+    updateTrowelButtons();
     recalcToday();
     prepareWashi();drawOps();drawHUD();
     /* HUD 保険 + ① 濡れの経時的な乾き */
@@ -769,6 +852,7 @@
   function paintSurface(p,uvs,angleFactor){
     if(uvs.length<2||trowelMortar<=0)return;
     angleFactor=angleFactor||1.0;   /* ④ 角度が適正なら 1.0、外れているほど 0.4 まで下がる */
+    const TR=TROWEL_CFG[activeTrowel], bw=TR.bladeW;   /* v6.0.7: 塗り幅・盛り量は鏝依存 */
     const ctx=p.ctx,W=p.W,H=p.H;
     const pts=uvs.map(u=>({x:u.x*W,y:(1-u.y)*H}));
     const f=pts[0],l=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)],muv=uvs[Math.floor(uvs.length/2)];
@@ -777,7 +861,7 @@
     if(p.lastUV){const dx=(muv.x-p.lastUV.x)*W,dy=-(muv.y-p.lastUV.y)*H;spd=Math.sqrt(dx*dx+dy*dy);}
     p.lastUV={x:muv.x,y:muv.y};
     const sf=(0.25+Math.random()*0.75)*(1-Math.max(0,Math.min(1,spd/18))*0.55)*angleFactor;
-    const sw=26+Math.min(spd*1.2,14);
+    const sw=26*(bw/0.084)+Math.min(spd*1.2,14);
     const it=Math.min(1,trowelMortar/(TMAX*0.25));
     const cr=Math.round(MR-sf*18),cg=Math.round(MG-sf*16),cb=Math.round(MB-sf*14);
     for(const pt of pts){
@@ -813,7 +897,7 @@
       ctx.beginPath();ctx.arc(gx,gy,Math.random()*2.5+0.4,0,Math.PI*2);ctx.fill();
     }
     markDirty(p);
-    const rH=Math.round(p.HW*0.084/1.2*0.65);
+    const rH=Math.max(1,Math.round(p.HW*bw/1.2*0.65));
     for(const uv of uvs){
       const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
       for(let y=Math.max(0,cy-rH);y<Math.min(p.HH,cy+rH+1);y+=2)
@@ -821,9 +905,9 @@
           const d=Math.sqrt((x-cx)**2+(y-cy)**2);if(d>rH)continue;
           const ef=d<rH*0.75?1:1-(d-rH*0.75)/(rH*0.25);
           const idx=y*p.HW+x;
-          p.heightData[idx]+=ef*sf*0.55;
+          p.heightData[idx]+=ef*sf*0.55*TR.paintGain;
           /* ① 塗った箇所は「濡れ」に上書き（max）*/
-          p.wetnessData[idx]=Math.max(p.wetnessData[idx],ef*0.95);
+          p.wetnessData[idx]=Math.max(p.wetnessData[idx],Math.min(1,ef*0.95*TR.wetGain));
         }
     }
     renderHt(p);
@@ -835,11 +919,12 @@
   /* 均し */
   function smoothSurface(p,uvs){
     if(uvs.length<2)return;
+    const TR=TROWEL_CFG[activeTrowel], bw=TR.bladeW;   /* v6.0.7 */
     const ctx=p.ctx,W=p.W,H=p.H;
     const pts=uvs.map(u=>({x:u.x*W,y:(1-u.y)*H}));
     const f=pts[0],l=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)];
     const bdx=l.x-f.x,bdy=l.y-f.y,ba=Math.atan2(bdy,bdx),hl=Math.sqrt(bdx*bdx+bdy*bdy)/2;
-    const sw=36;
+    const sw=36*(bw/0.084);
     const hasPaint=uvs.some(uv=>{
       const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
       return p.heightData[cy*p.HW+cx]>0.08;
@@ -858,7 +943,7 @@
     ctx.fillStyle=sh;ctx.beginPath();ctx.ellipse(0,0,hl*0.8,sw*0.22,0,0,Math.PI*2);ctx.fill();
     ctx.restore();
     markDirty(p);
-    const rH=Math.round(p.HW*0.084/1.2*0.8);
+    const rH=Math.max(1,Math.round(p.HW*bw/1.2*0.8));
     let anyWet=false;
     for(const uv of uvs){
       const cx=Math.floor(uv.x*p.HW),cy=Math.floor((1-uv.y)*p.HH);
@@ -868,9 +953,9 @@
           const idx=y*p.HW+x;
           if(p.heightData[idx]<0.08)continue;
           const mn=p.heightData[idx]*0.55;
-          p.heightData[idx]=Math.max(mn,p.heightData[idx]-(1-d/rH)*0.12);
+          p.heightData[idx]=Math.max(mn,p.heightData[idx]-(1-d/rH)*0.12*TR.smoothGain);
           /* 均しは軽く艶を復活（磨いた感） */
-          p.wetnessData[idx]=Math.min(1,p.wetnessData[idx]+0.20);
+          p.wetnessData[idx]=Math.min(1,p.wetnessData[idx]+0.20*TR.wetGain);
           anyWet=true;
         }
     }
@@ -1008,7 +1093,7 @@
       {l:'鏝板+ひねり',d:'コテ返し',c:'#88FF88'},
       {l:'壁+材料あり',d:'塗る',c:'#88FF88'},
       {l:'壁+材料なし',d:'均す(自動)',c:'#FFB060'},
-      {l:'左レーザー',d:'記録/履歴/リセット',c:'#ddd'},
+      {l:'左レーザー',d:'記録/履歴/形状/鏝',c:'#ddd'},
       {l:'右グリップ',d:'架台を掴んで移動',c:'#8AFFD0'},
       {l:'左スティック',d:'架台 前後左右',c:'#8AFFD0'},
       {l:'右スティック',d:'架台 上下',c:'#8AFFD0'},
@@ -1115,6 +1200,11 @@
     ctx.fillText('施 工 評 定',W/2,62);
     ctx.strokeStyle='rgba(110,70,30,0.6)';ctx.lineWidth=1.2;
     ctx.beginPath();ctx.moveTo(W*0.20,76);ctx.lineTo(W*0.80,76);ctx.stroke();
+    /* 使用中の鏝（v6.0.7）*/
+    ctx.fillStyle='#5a2f10';
+    ctx.font='bold 17px "Yu Mincho","Hiragino Mincho ProN",serif';
+    ctx.textAlign='center';
+    ctx.fillText('鏝 — '+TROWEL_CFG[activeTrowel].name,W/2,100);
     /* 段位 */
     const rk=getRank(scoreVal);
     ctx.fillStyle=rk.col;
@@ -1160,8 +1250,8 @@
       const factor=window._angleFactor||1.0;
       let label,col;
       if(factor>=0.95){label='良';col='#2a8a20';}
-      else if(deg<10){label='浅い';col='#a06010';}
-      else if(deg>25){label='立ち過ぎ';col='#a02020';}
+      else if(deg<(window._angleLo||10)){label='浅い';col='#a06010';}
+      else if(deg>(window._angleHi||25)){label='立ち過ぎ';col='#a02020';}
       else{label='要調整';col='#a06010';}
       ctx.textAlign='left';ctx.fillStyle='#3a1a05';
       ctx.font='bold 15px "Yu Mincho","Hiragino Mincho ProN",serif';
@@ -1193,7 +1283,7 @@
     ctx.textAlign='right';
     ctx.fillText(`${Math.floor(val*100)}`,W*0.87,y+5);
   }
-  /* ===== 手順パネル＋経過タイマー 描画（v6.0.6）===== */
+  /* ===== 手順パネル＋経過タイマー 描画（v6.0.7）===== */
   function updateTimerBtnLabel(){const t=document.getElementById('timerBtnTxt');if(t)t.setAttribute('value',timerRunning?'一時停止':'計測開始');}
   function drawStep(){
     const cvs=document.getElementById('stepCvs');if(!cvs)return;
@@ -1248,7 +1338,7 @@
     timerAccum=0;timerStart=performance.now();setMsg('タイマーを戻した');
     haptic(0.3,60);drawStep();
   });
-  /* ===== 形状ジオメトリ生成（v6.0.6）=====
+  /* ===== 形状ジオメトリ生成（v6.0.7）=====
      いずれも UV を [0,1]^2 に収め、法線を頂点ごとに持たせる。
      → 既存のキャンバス塗り/高さマップ/変位/スコア計算はUV基準なのでそのまま流用できる。 */
   function buildPlaneGeo(){
@@ -1284,7 +1374,7 @@
     g.setIndex(idx);
     return g;
   }
-  /* 階段（v6.0.6 改訂）: 側面プロファイルを幅方向に押し出す点は従来通りだが、
+  /* 階段（v6.0.7 改訂）: 側面プロファイルを幅方向に押し出す点は従来通りだが、
      ★角(稜線)の割れ対策: 蹴上げと踏み面の境界を「1つの頂点」に溶接し、
        両面の平均法線(miter)を持たせる。従来は境界に法線が90°異なる頂点が二重に存在したため、
        displacementMap で塗り厚を出すと両者が別方向へ押し出されて角に隙間が開いていた。
@@ -1405,7 +1495,7 @@
     else{updateShapeButtons();setMsg('R壁: '+(shapeConvex?'凸':'凹'));}
     haptic(0.3,60);
   });
-  /* ===== 架台の移動 操作（v6.0.6）: スティックによる微調整nudge ===== */
+  /* ===== 架台の移動 操作（v6.0.7）: スティックによる微調整nudge ===== */
   function nudgeRig(axis,d){
     const r=document.getElementById('rig');if(!r)return;
     r.object3D.position[axis]+=d;
@@ -1432,6 +1522,32 @@
   { const L=document.getElementById('leftHand'),R=document.getElementById('rightHand');
     if(L)L.addEventListener('thumbstickmoved',e=>onStick('left',e));
     if(R)R.addEventListener('thumbstickmoved',e=>onStick('right',e)); }
+  /* ===== 鏝の切り替え（v6.0.7）===== */
+  function applyTrowel(i){
+    activeTrowel=i;
+    const T=TROWEL_CFG[i];
+    TMAX=T.capacity;
+    if(trowelMortar>TMAX*1.3)trowelMortar=TMAX*1.3;   /* 容量の小さい鏝へ移った時の溢れを抑える */
+    const bl=document.querySelector('[blade-shape]');
+    if(bl&&bl.components&&bl.components['blade-shape'])bl.components['blade-shape'].build();
+    if(trowelComp)buildBpts(trowelComp);              /* 塗り判定のサンプル点を新寸法で再導出 */
+    /* 鏝面のモルタル表示位置も刃寸法に合わせる */
+    const RECTL=(T.tip==='square')?T.bladeL:T.rectL;
+    const mEl=document.getElementById('tMortar');
+    if(mEl)mEl.setAttribute('position',{x:-T.bladeW/4, y:0.035+(-T.bladeL/2+RECTL/2), z:-0.057});
+    updateTrowelButtons();updMortar();drawHUD();
+    setMsg('鏝: '+T.name);
+  }
+  function updateTrowelButtons(){
+    TROWEL_CFG.forEach((t,i)=>{
+      const b=document.getElementById('trowelBtn'+i);
+      if(b)b.setAttribute('color',i===activeTrowel?'#c08040':'#555');
+    });
+  }
+  TROWEL_CFG.forEach((t,i)=>{
+    const b=document.getElementById('trowelBtn'+i);
+    if(b)b.addEventListener('click',()=>{applyTrowel(i);haptic(0.3,60);});
+  });
   updMortar();
   </script>
 </body>
