@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>左官MR練習 - 平壁（v6.1 道場・Quest専用）</title>
+  <title>左官MR練習 - 平壁（v6.1.1 道場・Quest専用）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script>
-  /* 刃の形状（v6.1）: TROWEL_CFG の寸法から生成。鏝を替えると build() で作り直す */
+  /* 刃の形状（v6.1.1）: TROWEL_CFG の寸法から生成。鏝を替えると build() で作り直す */
   AFRAME.registerComponent('blade-shape',{
     init:function(){this.build();},
     build:function(){
@@ -57,7 +57,7 @@
          さらに wrapper position="0 0 -0.0175"（柄の中心をコントローラー原点に合わせる）で
          全体が -0.0175 分シフトするので、bpts の Z もその分シフト。*/
       trowelComp=this;
-      buildBpts(this);   /* 刃のサンプル点は鏝寸法から導出（v6.1）*/
+      buildBpts(this);   /* 刃のサンプル点は鏝寸法から導出（v6.1.1）*/
       this._wp=new THREE.Vector3();this._fwd=new THREE.Vector3();
       this._tp=new THREE.Vector3();this._hp=new THREE.Vector3();this._bc=new THREE.Vector3();
       this._hitN=new THREE.Vector3(0,0,1);   /* ヒット面の法線（曲面/複数面の角度評価用）*/
@@ -84,7 +84,7 @@
       document.getElementById('leftHand').addEventListener('gripdown',()=>{
         hawkMortar=100;updMortar();setMsg('鏝板補充');
       });
-      /* 右グリップ: 架台を掴んで移動（v6.1）。左グリップは補充のままなので競合しない */
+      /* 右グリップ: 架台を掴んで移動（v6.1.1）。左グリップは補充のままなので競合しない */
       this.el.addEventListener('gripdown',()=>{window._grabbing=true;this._grabInit=false;setMsg('架台を掴んだ');haptic(0.4,80);});
       this.el.addEventListener('gripup',()=>{window._grabbing=false;setMsg('架台を固定');haptic(0.3,60);});
     },
@@ -101,7 +101,7 @@
         if(s?.inputSources)for(const src of s.inputSources)
           if(src.handedness==='right'&&src.gamepad?.hapticActuators?.length){window._rgp=src.gamepad;break;}
       }catch(e){}}
-      /* ★ 架台の掴み移動（v6.1）: 右グリップ中は塗り/コテ返しを止めて平行移動のみ */
+      /* ★ 架台の掴み移動（v6.1.1）: 右グリップ中は塗り/コテ返しを止めて平行移動のみ */
       if(window._grabbing){
         const rig=document.getElementById('rig');
         if(rig){
@@ -228,7 +228,7 @@
   </style>
 </head>
 <body>
-  <div id="ver">v6.1 道場</div>
+  <div id="ver">v6.1.1 道場</div>
   <div id="info">
     <strong>左官MR練習 - 平壁 (道場)</strong><br>
     塗代ガイド 5mm／最大塗り厚 10mm<br>
@@ -256,7 +256,7 @@
       <canvas id="histCvs" width="512" height="600"></canvas>
       <canvas id="stepCvs" width="512" height="384"></canvas>
     </a-assets>
-    <!-- 架台（v6.1）: 練習対象＋塗代ガイドをまとめて平行移動する親エンティティ。掴み移動/nudgeで動かす -->
+    <!-- 架台（v6.1.1）: 練習対象＋塗代ガイドをまとめて平行移動する親エンティティ。掴み移動/nudgeで動かす -->
     <a-entity id="rig" position="0 0 0">
     <!-- メイン壁: base roughness=1.0, metalness=0.05（湿り感のために metalness を少し盛る） -->
     <a-entity id="wallMain"
@@ -289,7 +289,7 @@
       <a-box id="resetBtn" width="0.38" height="0.11" depth="0.04" color="#a44"></a-box>
       <a-text value="リセット" position="0 0 0.03" align="center" color="#fff" width="1.5"></a-text>
     </a-entity>
-    <!-- 手順パネル＋経過タイマー（v6.1 追加） -->
+    <!-- 手順パネル＋経過タイマー（v6.1.1 追加） -->
     <a-entity position="0.95 1.02 -0.60" rotation="0 -30 0">
       <a-plane id="stepPanel" width="0.60" height="0.42" material="shader:flat;color:#fff;transparent:true;"></a-plane>
       <a-entity position="-0.20 -0.285 0.02">
@@ -305,7 +305,7 @@
         <a-text value="0に戻す" position="0 0 0.02" align="center" color="#fff" width="1.25"></a-text>
       </a-entity>
     </a-entity>
-    <!-- 形状セレクト（v6.1 追加）: レーザーで押す形状切替ボタン -->
+    <!-- 形状セレクト（v6.1.1 追加）: レーザーで押す形状切替ボタン -->
     <a-entity position="-1.0 1.00 -0.55" rotation="0 35 0">
       <a-text value="形状切替" position="-0.185 0.078 0.01" align="left" color="#eee" width="1.15"></a-text>
       <a-entity position="-0.128 0 0.01">
@@ -329,7 +329,7 @@
         <a-text id="shapeRToggleTxt" value="凸R" position="0 0 0.02" align="center" color="#fff" width="1.0"></a-text>
       </a-entity>
     </a-entity>
-    <!-- 鏝セレクト（v6.1 追加）: レーザーで押す鏝切替ボタン -->
+    <!-- 鏝セレクト（v6.1.1 追加）: レーザーで押す鏝切替ボタン -->
     <a-entity position="-1.0 0.86 -0.55" rotation="0 35 0">
       <a-text value="鏝切替" position="-0.185 0.075 0.01" align="left" color="#eee" width="1.15"></a-text>
       <a-entity position="-0.128 0 0.01">
@@ -400,7 +400,7 @@
   /* ハプティクス */
   window._rgp=null;
   function haptic(i,ms){try{window._rgp?.hapticActuators?.[0]?.pulse(i,ms);}catch(e){}}
-  /* ===== 鏝の種類（v6.1）: 寸法・質感・挙動を一元定義。配列順がボタンの並び順 =====
+  /* ===== 鏝の種類（v6.1.1）: 寸法・質感・挙動を一元定義。配列順がボタンの並び順 =====
      bladeW/bladeL/rectL/thick … 刃の実寸(m)。tip:'point'=剣先, 'square'=角(木鏝)
      capacity … 刃に持てる材料量(旧TMAX)  paintGain … 盛りやすさ  smoothGain … 均し/押さえの効き
      wetGain … 艶の出やすさ(木鏝は低い)   angleLo/Hi … 適正な鏝角度(度)
@@ -416,7 +416,7 @@
       color:0xd8dade, metalness:0.96, roughness:0.06,
       capacity:45, paintGain:0.75, smoothGain:1.60, wetGain:1.50,
       angleLo:5,  angleHi:20, flex:0.6, sndTone:1.15 },
-    /* 木鏝（v6.1）: 輪郭は中塗鏝と同一（幅84×長240mm・平坦部200mm・剣先）。
+    /* 木鏝（v6.1.1）: 輪郭は中塗鏝と同一（幅84×長240mm・平坦部200mm・剣先）。
        木らしさは厚み8mmと材質・挙動側で出す。tip:'square' の分岐は将来用に残してある */
     { id:'kigote', name:'木鏝', short:'木',
       bladeW:0.084, bladeL:0.240, rectL:0.200, thick:0.008, tip:'point',
@@ -425,7 +425,7 @@
       angleLo:10, angleHi:30, flex:0.0, sndTone:0.55 }
   ];
   let activeTrowel=0, trowelComp=null;
-  /* 刃のサンプル点を刃寸法から導出（v6.1）。
+  /* 刃のサンプル点を刃寸法から導出（v6.1.1）。
      従来は 240mm 刃前提の手計算定数(Z0=0.0675/Z1=-0.1325)だった。
      wrapper の -90°X回転で (0,y,z)→(x,z,-y)、さらに wrapper position z=-0.0175 が乗るため
      rightHand local の z = -(0.035 + y_blade) - 0.0175 で求まる。*/
@@ -443,11 +443,11 @@
   let TMAX=TROWEL_CFG[0].capacity;
   const PCOST=0.35;
   let hudMsg='',msgT=null,bestScore=0;
-  /* ===== 経過タイマー（v6.1）: 練習全体の経過時間のみを計測 ===== */
+  /* ===== 経過タイマー（v6.1.1）: 練習全体の経過時間のみを計測 ===== */
   let timerRunning=false,timerAccum=0,timerStart=0;
   function timerElapsedMs(){return timerAccum+(timerRunning?(performance.now()-timerStart):0);}
   function fmtTime(ms){const s=Math.floor(ms/1000),m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
-  /* ===== 手順（v6.1）: 差し替えやすいよう配列で一元定義 ===== */
+  /* ===== 手順（v6.1.1）: 差し替えやすいよう配列で一元定義 ===== */
   const STEP_LIST=[
     '①壁 左→上→右→下 の順番で縁を塗っていく',
     '②中を真っ直ぐ塗っていく',
@@ -455,7 +455,7 @@
     '④完成'
   ];
   let currentStep=0;
-  /* ===== 練習対象の形状（v6.1）: 主要パラメータは全てここで一元定義 ===== */
+  /* ===== 練習対象の形状（v6.1.1）: 主要パラメータは全てここで一元定義 ===== */
   const SHAPE_CFG={
     plane :{ w:1.2, h:1.0, segW:48, segH:40 },
     /* R壁: 半径R300mm・弧90°（凸/凹は shapeConvex で切替）*/
@@ -468,7 +468,7 @@
              /* 左右の側板(側面を塞ぐ板)。UVは主面と別領域に確保するので塗り分けできる */
              sidePanels:true, sideSeg:6,
              mainU:0.78, sideU:0.09, gutter:0.02 },
-    /* ===== 2級課題（v6.1）: 左官技能士2級 実技課題図(図3.1)を数値化。単位m =====
+    /* ===== 2級課題（v6.1.1）: 左官技能士2級 実技課題図(図3.1)を数値化。単位m =====
        正面から見た大壁の開口を定義する。x=左端0→右端0.870、y=土台上端0→上。
        上端輪郭: 左柱際455 →(落ち80)→ 375 →(水平50)→(落ち50)→ 325 →(45°で100下る)→ 225
                  →(水平)→ R200 で立ち上がって右柱際425。R中心は(xa, hRTop)で柱面に接する。
@@ -476,12 +476,19 @@
     k2:{ totalW:0.870, colW:0.100, chiri:0.040,
          hLeft:0.455, hStep:0.375, hSlope:0.325, hMid:0.225, hRTop:0.425,
          R:0.200, runTop:0.050, step50w:0.050, slopeRun:0.100,
-         baseH:0.150, frameTop:0.600,
-         spacing:0.010, jumpEps:0.0005, gridY:34, chiriSeg:3 }
+         baseH:0.150, frameTop:0.870,      /* 全高870(土台150は含まない) */
+         /* 袖壁: 見付け面から手前へ150折れる返し壁。大壁側と入隅を成す。厚(小口)40・高さ870 */
+         sodeD:0.150, sodeH:0.870, sodeT:0.040,
+         coreT:0.030,                      /* 表(大壁側)と裏(真壁側)の心材厚。図面に寸法なし */
+         spacing:0.010, jumpEps:0.0005, gridY:34, chiriSeg:3,
+         /* 塗り面のUV割付(u方向の帯)。隙間は塗り分けの緩衝帯 */
+         uv:{ oh:[0.000,0.560], koguchi:[0.575,0.655],
+              sodeLi:[0.670,0.790], sodeLk:[0.800,0.835],
+              sodeRi:[0.850,0.970], sodeRk:[0.980,1.000] } }
   };
   let activeShape='plane';
   let shapeConvex=true;   /* R壁: true=凸R / false=凹R */
-  /* ===== 架台の移動（v6.1）: 移動/微調整パラメータを一元定義 ===== */
+  /* ===== 架台の移動（v6.1.1）: 移動/微調整パラメータを一元定義 ===== */
   const MOVE_CFG={
     nudgeStep:0.015,        /* スティック微調整の1刻み (m) ≒1.5cm */
     nudgeThreshold:0.55,    /* スティックの倒し込み判定閾値 */
@@ -554,7 +561,7 @@
        radius=0.012 の base sphere が満載時に 幅42mm × 長さ204mm × 盛り高さ28mm の細長カマボコに */
     const rp=Math.pow(r,0.7);
     const opac=(Math.min(1,r*1.1)*0.9).toFixed(2);
-    /* v6.1: 満載時に「刃幅の半分 × 長方形部の長さ」を覆うよう、刃寸法から倍率を算出 */
+    /* v6.1.1: 満載時に「刃幅の半分 × 長方形部の長さ」を覆うよう、刃寸法から倍率を算出 */
     const T=TROWEL_CFG[activeTrowel];
     const RECTL=(T.tip==='square')?T.bladeL:T.rectL;
     const maxW=(T.bladeW/2)/0.024, maxL=(RECTL*1.02)/0.024;
@@ -579,7 +586,7 @@
        - 高域ガリガリ寄りだったのを、中低域body重視に転換
        - playbackRate を 1.1-1.5 から 0.95-1.2 に落として粒を少しゆったり戻す
        - HP を大きく下げて body を復活 */
-    /* v6.1: 鏝の材質で音の高さを変える（木鏝=低く鈍い / 仕上鏝=硬く高い）*/
+    /* v6.1.1: 鏝の材質で音の高さを変える（木鏝=低く鈍い / 仕上鏝=硬く高い）*/
     tn(){try{return TROWEL_CFG[activeTrowel].sndTone;}catch(e){return 1;}},
     _paintFreq(spd){return (2000+Math.min(spd,20)*80)*this.tn();},
     _smoothFreq(spd){return (3500+Math.min(spd,20)*130)*this.tn();},
@@ -666,7 +673,7 @@
       s5.start(now);s5.stop(now+0.200);}
   };
   /* 壁・塗代ガイド配置 */
-  /* 架台の水平配置（v6.1）: 壁・ガイドはrigの子。rigを平行移動するだけで整合が保たれる。
+  /* 架台の水平配置（v6.1.1）: 壁・ガイドはrigの子。rigを平行移動するだけで整合が保たれる。
      Y(高さ)は掴み移動/nudgeの結果を尊重して据え置く。*/
   function placeWalls(cx,cz){
     const rig=document.getElementById('rig');if(!rig)return;
@@ -753,7 +760,7 @@
       const hm=document.getElementById('histPanel')?.getObject3D('mesh');
       if(hm){hm.material.map=histTex;hm.material.needsUpdate=true;}
     }
-    /* 手順パネルのテクスチャ（v6.1）*/
+    /* 手順パネルのテクスチャ（v6.1.1）*/
     const stepCvs=document.getElementById('stepCvs');
     if(stepCvs){
       stepTex=new THREE.CanvasTexture(stepCvs);
@@ -762,7 +769,7 @@
       if(sm){sm.material.map=stepTex;sm.material.needsUpdate=true;}
     }
     updateTimerBtnLabel();drawStep();
-    applyShape('plane');   /* v6.1: 初期形状を確定（自作ジオメトリに統一）*/
+    applyShape('plane');   /* v6.1.1: 初期形状を確定（自作ジオメトリに統一）*/
     updateTrowelButtons();
     recalcToday();
     prepareWashi();drawOps();drawHUD();
@@ -861,7 +868,7 @@
   function paintSurface(p,uvs,angleFactor){
     if(uvs.length<2||trowelMortar<=0)return;
     angleFactor=angleFactor||1.0;   /* ④ 角度が適正なら 1.0、外れているほど 0.4 まで下がる */
-    const TR=TROWEL_CFG[activeTrowel], bw=TR.bladeW;   /* v6.1: 塗り幅・盛り量は鏝依存 */
+    const TR=TROWEL_CFG[activeTrowel], bw=TR.bladeW;   /* v6.1.1: 塗り幅・盛り量は鏝依存 */
     const ctx=p.ctx,W=p.W,H=p.H;
     const pts=uvs.map(u=>({x:u.x*W,y:(1-u.y)*H}));
     const f=pts[0],l=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)],muv=uvs[Math.floor(uvs.length/2)];
@@ -928,7 +935,7 @@
   /* 均し */
   function smoothSurface(p,uvs){
     if(uvs.length<2)return;
-    const TR=TROWEL_CFG[activeTrowel], bw=TR.bladeW;   /* v6.1 */
+    const TR=TROWEL_CFG[activeTrowel], bw=TR.bladeW;   /* v6.1.1 */
     const ctx=p.ctx,W=p.W,H=p.H;
     const pts=uvs.map(u=>({x:u.x*W,y:(1-u.y)*H}));
     const f=pts[0],l=pts[pts.length-1],mid=pts[Math.floor(pts.length/2)];
@@ -1209,7 +1216,7 @@
     ctx.fillText('施 工 評 定',W/2,62);
     ctx.strokeStyle='rgba(110,70,30,0.6)';ctx.lineWidth=1.2;
     ctx.beginPath();ctx.moveTo(W*0.20,76);ctx.lineTo(W*0.80,76);ctx.stroke();
-    /* 使用中の鏝（v6.1）*/
+    /* 使用中の鏝（v6.1.1）*/
     ctx.fillStyle='#5a2f10';
     ctx.font='bold 17px "Yu Mincho","Hiragino Mincho ProN",serif';
     ctx.textAlign='center';
@@ -1292,7 +1299,7 @@
     ctx.textAlign='right';
     ctx.fillText(`${Math.floor(val*100)}`,W*0.87,y+5);
   }
-  /* ===== 手順パネル＋経過タイマー 描画（v6.1）===== */
+  /* ===== 手順パネル＋経過タイマー 描画（v6.1.1）===== */
   function updateTimerBtnLabel(){const t=document.getElementById('timerBtnTxt');if(t)t.setAttribute('value',timerRunning?'一時停止':'計測開始');}
   function drawStep(){
     const cvs=document.getElementById('stepCvs');if(!cvs)return;
@@ -1347,7 +1354,7 @@
     timerAccum=0;timerStart=performance.now();setMsg('タイマーを戻した');
     haptic(0.3,60);drawStep();
   });
-  /* ===== 形状ジオメトリ生成（v6.1）=====
+  /* ===== 形状ジオメトリ生成（v6.1.1）=====
      いずれも UV を [0,1]^2 に収め、法線を頂点ごとに持たせる。
      → 既存のキャンバス塗り/高さマップ/変位/スコア計算はUV基準なのでそのまま流用できる。 */
   function buildPlaneGeo(){
@@ -1383,7 +1390,7 @@
     g.setIndex(idx);
     return g;
   }
-  /* 階段（v6.1 改訂）: 側面プロファイルを幅方向に押し出す点は従来通りだが、
+  /* 階段（v6.1.1 改訂）: 側面プロファイルを幅方向に押し出す点は従来通りだが、
      ★角(稜線)の割れ対策: 蹴上げと踏み面の境界を「1つの頂点」に溶接し、
        両面の平均法線(miter)を持たせる。従来は境界に法線が90°異なる頂点が二重に存在したため、
        displacementMap で塗り厚を出すと両者が別方向へ押し出されて角に隙間が開いていた。
@@ -1468,7 +1475,7 @@
     g.center();   /* 練習しやすい高さに置けるよう原点中心へ */
     return g;
   }
-  /* ===== 2級課題（v6.1）: 寸法の導出と上端輪郭 ===== */
+  /* ===== 2級課題（v6.1.1）: 寸法の導出と上端輪郭 ===== */
   function k2Dims(){
     const c=SHAPE_CFG.k2, E=c.jumpEps;
     const xL=c.colW, xR=c.totalW-c.colW;
@@ -1502,26 +1509,103 @@
     add(d.x2e,d.x3); add(d.x3,d.xa); add(d.xa,d.xR);
     return xs;
   }
-  /* 塗り面＝大壁。輪郭に沿ってグリッドを張るので、被覆率も開口の実面積で評価される */
+  /* 大壁の境界頂点における「開口側を向く法線」(XY平面内)。内部頂点は null。
+     上端輪郭は隣接標本から求めるので、折れ点で自動的に平均法線(miter)になる。 */
+  function k2EdgeN(i,j,NX,NY,xs){
+    let nx=0,ny=0;
+    if(j===0){ ny+=1; }                                   /* 土台際: 上向き */
+    if(j===NY){                                           /* 上端輪郭 */
+      const xa=xs[Math.max(0,i-1)], xb=xs[Math.min(NX,i+1)];
+      const dx=xb-xa, dy=k2YTop(xb)-k2YTop(xa), L=Math.hypot(dx,dy)||1;
+      nx+=dy/L; ny+=-dx/L;                                /* 進行方向を-90°回すと開口側 */
+    }
+    if(i===0)  nx+=1;                                     /* 左柱際: 右向き */
+    if(i===NX) nx-=1;                                     /* 右柱際: 左向き */
+    const L=Math.hypot(nx,ny);
+    return L<1e-9?null:[nx/L,ny/L];
+  }
+  /* 塗り面 = 大壁 + 周囲の小口(40mm) + 袖壁(内面と小口)。
+     大壁の縁と小口は同じ位置・同じ法線(miter)を共有させて溶接するので、塗り厚を出しても角が割れない。 */
   function buildK2Wall(){
-    const d=k2Dims(), c=d.c;
-    const xs=k2Xs(), NY=c.gridY;
+    const d=k2Dims(), c=d.c, U=c.uv, Z=c.chiri;
+    const xs=k2Xs(), NX=xs.length-1, NY=c.gridY, NS=c.chiriSeg;
     const tx=-c.totalW/2, ty=-c.hLeft/2;
-    const pos=[],nor=[],uv=[],idx=[],rows=[];
-    for(let i=0;i<xs.length;i++){
+    const pos=[],nor=[],uv=[],idx=[];
+    const V=(x,y,z,n,u,v)=>{const L=Math.hypot(n[0],n[1],n[2])||1;
+      pos.push(x+tx,y+ty,z); nor.push(n[0]/L,n[1]/L,n[2]/L); uv.push(u,v); return pos.length/3-1;};
+    const quad=(a,b,cc,dd)=>{idx.push(a,b,cc, a,cc,dd);};
+    const lerp=(r,t)=>r[0]+(r[1]-r[0])*t;
+    /* --- (1) 大壁。境界頂点は小口との溶接のため miter 法線を持たせる --- */
+    const rows=[];
+    for(let i=0;i<=NX;i++){
       const x=xs[i], yt=k2YTop(x), rs=pos.length/3;
       for(let j=0;j<=NY;j++){
-        const y=yt*j/NY;
-        pos.push(x+tx, y+ty, 0);
-        nor.push(0,0,1);
-        uv.push((x-d.xL)/(d.xR-d.xL), y/c.hLeft);   /* 実寸に比例したUV */
+        const y=yt*j/NY, e=k2EdgeN(i,j,NX,NY,xs);
+        const n=e?[e[0],e[1],1]:[0,0,1];
+        V(x,y,0,n, lerp(U.oh,(x-d.xL)/(d.xR-d.xL)), y/c.hLeft);
       }
       rows.push(rs);
     }
-    for(let i=0;i<xs.length-1;i++)for(let j=0;j<NY;j++){
+    for(let i=0;i<NX;i++)for(let j=0;j<NY;j++){
       const r0=rows[i]+j,r1=rows[i]+j+1,r2=rows[i+1]+j,r3=rows[i+1]+j+1;
       idx.push(r0,r2,r1, r1,r2,r3);
     }
+    /* --- (2) 周囲の小口(幅40)。大壁の境界を一周し、手前(z=0→chiri)へ立ち上げる --- */
+    const loop=[];
+    const addL=(i,j)=>{const x=xs[i], y=k2YTop(x)*j/NY, e=k2EdgeN(i,j,NX,NY,xs);
+      if(e)loop.push({x,y,n:e});};
+    for(let i=0;i<=NX;i++) addL(i,0);            /* 土台際 → 右へ */
+    for(let j=1;j<=NY;j++) addL(NX,j);           /* 右柱際 → 上へ */
+    for(let i=NX-1;i>=0;i--) addL(i,NY);         /* 上端輪郭 → 左へ */
+    for(let j=NY-1;j>=1;j--) addL(0,j);          /* 左柱際 → 下へ */
+    loop.push({x:xs[0],y:0,n:k2EdgeN(0,0,NX,NY,xs)});   /* 一周を閉じる */
+    let plen=0; const pcum=[0];
+    for(let k=1;k<loop.length;k++){plen+=Math.hypot(loop[k].x-loop[k-1].x,loop[k].y-loop[k-1].y);pcum.push(plen);}
+    const krow=[];
+    for(let k=0;k<loop.length;k++){
+      const P=loop[k], rs=pos.length/3;
+      for(let m=0;m<=NS;m++){
+        const z=Z*m/NS;
+        /* z=0 の列だけ大壁と同じ miter 法線にして溶接、以降は小口本来の法線 */
+        const n=(m===0)?[P.n[0],P.n[1],1]:[P.n[0],P.n[1],0];
+        V(P.x,P.y,z,n, lerp(U.koguchi,m/NS), pcum[k]/plen);
+      }
+      krow.push(rs);
+    }
+    for(let k=0;k<loop.length-1;k++)for(let m=0;m<NS;m++){
+      const r0=krow[k]+m,r1=krow[k]+m+1,r2=krow[k+1]+m,r3=krow[k+1]+m+1;
+      idx.push(r0,r1,r2, r1,r3,r2);
+    }
+    /* --- (3) 袖壁。見付け面(z=chiri)から手前へ sodeD 出る返し壁。
+           内面は中央を向き、大壁側と入隅を成す。前端に幅 sodeT の小口。 --- */
+    const NH=Math.max(8,Math.round(c.sodeH/0.030)), ND=Math.max(4,Math.round(c.sodeD/0.030));
+    [[0,+1,U.sodeLi,U.sodeLk],[c.totalW,-1,U.sodeRi,U.sodeRk]].forEach(([x0,sgn,ui,uk])=>{
+      /* 内面: x=x0 の面、法線は中央向き(sgn) */
+      const rw=[];
+      for(let a=0;a<=ND;a++){
+        const z=Z+c.sodeD*a/ND, rs=pos.length/3;
+        /* 前端(a=ND)は小口との出隅。両面の平均法線を共有させて溶接し、塗り厚を出しても角が割れないようにする */
+        const n=(a===ND)?[sgn,0,1]:[sgn,0,0];
+        for(let b=0;b<=NH;b++) V(x0,c.sodeH*b/NH,z,n, lerp(ui,a/ND), b/NH);
+        rw.push(rs);
+      }
+      for(let a=0;a<ND;a++)for(let b=0;b<NH;b++){
+        const r0=rw[a]+b,r1=rw[a]+b+1,r2=rw[a+1]+b,r3=rw[a+1]+b+1;
+        if(sgn>0) idx.push(r0,r1,r2, r1,r3,r2); else idx.push(r0,r2,r1, r1,r2,r3);
+      }
+      /* 小口: 前端 z=chiri+sodeD の面、幅 sodeT、法線は手前(+Z) */
+      const rk=[];
+      for(let a=0;a<=2;a++){
+        const x=x0-sgn*c.sodeT*a/2, rs=pos.length/3;
+        const n=(a===0)?[sgn,0,1]:[0,0,1];   /* a=0 は内面と共有する稜線 */
+        for(let b=0;b<=NH;b++) V(x,c.sodeH*b/NH,Z+c.sodeD,n, lerp(uk,a/2), b/NH);
+        rk.push(rs);
+      }
+      for(let a=0;a<2;a++)for(let b=0;b<NH;b++){
+        const r0=rk[a]+b,r1=rk[a]+b+1,r2=rk[a+1]+b,r3=rk[a+1]+b+1;
+        if(sgn>0) idx.push(r0,r1,r2, r1,r3,r2); else idx.push(r0,r2,r1, r1,r2,r3);
+      }
+    });
     const g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     g.setAttribute('normal',  new THREE.Float32BufferAttribute(nor,3));
@@ -1529,34 +1613,38 @@
     g.setIndex(idx);
     return g;
   }
-  /* 枠（柱・上枠・土台）＝見付け面 + ちり面。塗り対象ではなく見た目と基準用 */
+  /* 枠（柱・上枠・土台）と袖壁の外側。塗り対象ではなく見た目と基準用。
+     裏(真壁側)は表を左右反転した立体を心材厚 coreT の裏に付ける。 */
   function buildK2Frame(){
     const d=k2Dims(), c=d.c, Z=c.chiri;
     const tx=-c.totalW/2, ty=-c.hLeft/2;
     const pos=[],nor=[],uv=[],idx=[];
     const V=(x,y,z,n)=>{pos.push(x+tx,y+ty,z);nor.push(n[0],n[1],n[2]);uv.push(0,0);return pos.length/3-1;};
     const quad=(a,b,cc,dd)=>{idx.push(a,b,cc, a,cc,dd);};
-    /* --- 見付け面(z=chiri, 法線+Z): 左柱 / 右柱 / 上枠 / 土台 --- */
     const N=[0,0,1];
     const flat=(x0,x1,y0,y1)=>{quad(V(x0,y0,Z,N),V(x1,y0,Z,N),V(x1,y1,Z,N),V(x0,y1,Z,N));};
     flat(0,d.xL,-c.baseH,c.frameTop);            /* 左柱 */
     flat(d.xR,c.totalW,-c.baseH,c.frameTop);     /* 右柱 */
     flat(d.xL,d.xR,-c.baseH,0);                  /* 土台 */
-    const xs=k2Xs();                             /* 上枠(輪郭より上) */
-    for(let i=0;i<xs.length-1;i++){
-      const xa2=xs[i],xb=xs[i+1],ya=k2YTop(xa2),yb=k2YTop(xb);
-      quad(V(xa2,ya,Z,N),V(xb,yb,Z,N),V(xb,c.frameTop,Z,N),V(xa2,c.frameTop,Z,N));
+    const xs=k2Xs();
+    for(let i=0;i<xs.length-1;i++){              /* 上枠(輪郭より上) */
+      const xa=xs[i],xb=xs[i+1];
+      quad(V(xa,k2YTop(xa),Z,N),V(xb,k2YTop(xb),Z,N),V(xb,c.frameTop,Z,N),V(xa,c.frameTop,Z,N));
     }
-    /* --- ちり面(z=0→chiri): 開口の周囲。法線は開口側を向く --- */
-    const strip=(x0,y0,x1,y1)=>{
-      const dx=x1-x0,dy=y1-y0,L=Math.hypot(dx,dy); if(L<1e-9)return;
-      const n=[dy/L,-dx/L,0];                    /* 進行方向を-90°回すと開口側 */
-      quad(V(x0,y0,0,n),V(x1,y1,0,n),V(x1,y1,Z,n),V(x0,y0,Z,n));
-    };
-    for(let i=0;i<xs.length-1;i++) strip(xs[i],k2YTop(xs[i]),xs[i+1],k2YTop(xs[i+1]));   /* 上端輪郭 */
-    strip(d.xL,0,d.xL,c.hLeft);                  /* 左柱のちり */
-    strip(d.xR,c.hRTop,d.xR,0);                  /* 右柱のちり */
-    strip(d.xR,0,d.xL,0);                        /* 土台のちり */
+    /* 袖壁の外側面 */
+    [[0,-1],[c.totalW,+1]].forEach(([x0,sgn])=>{
+      const xo=x0+sgn*c.sodeT, NO=[sgn,0,0];
+      if(sgn>0) quad(V(xo,0,Z,NO),V(xo,c.sodeH,Z,NO),V(xo,c.sodeH,Z+c.sodeD,NO),V(xo,0,Z+c.sodeD,NO));
+      else      quad(V(xo,0,Z,NO),V(xo,0,Z+c.sodeD,NO),V(xo,c.sodeH,Z+c.sodeD,NO),V(xo,c.sodeH,Z,NO));
+    });
+    /* 裏(真壁側): 180°回して心材の裏に付ける → どちら側から見てもRが右・段が左 */
+    const nv=pos.length/3, ni=idx.length;
+    for(let i=0;i<nv;i++){
+      pos.push(-pos[i*3], pos[i*3+1], -pos[i*3+2]-c.coreT);
+      nor.push(-nor[i*3], nor[i*3+1], -nor[i*3+2]);
+      uv.push(0,0);
+    }
+    for(let k=0;k<ni;k++) idx.push(idx[k]+nv);
     const g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     g.setAttribute('normal',  new THREE.Float32BufferAttribute(nor,3));
@@ -1613,7 +1701,7 @@
     else{updateShapeButtons();setMsg('R壁: '+(shapeConvex?'凸':'凹'));}
     haptic(0.3,60);
   });
-  /* ===== 架台の移動 操作（v6.1）: スティックによる微調整nudge ===== */
+  /* ===== 架台の移動 操作（v6.1.1）: スティックによる微調整nudge ===== */
   function nudgeRig(axis,d){
     const r=document.getElementById('rig');if(!r)return;
     r.object3D.position[axis]+=d;
@@ -1640,7 +1728,7 @@
   { const L=document.getElementById('leftHand'),R=document.getElementById('rightHand');
     if(L)L.addEventListener('thumbstickmoved',e=>onStick('left',e));
     if(R)R.addEventListener('thumbstickmoved',e=>onStick('right',e)); }
-  /* ===== 鏝の切り替え（v6.1）===== */
+  /* ===== 鏝の切り替え（v6.1.1）===== */
   function applyTrowel(i){
     activeTrowel=i;
     const T=TROWEL_CFG[i];
